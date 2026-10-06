@@ -5,6 +5,8 @@ use App\Http\Controllers\ExerciseIndexController;
 use App\Livewire\Admin\Datasets\DatasetImportWizard;
 use App\Livewire\Admin\Datasets\DatasetIndex;
 use App\Livewire\Admin\Datasets\DatasetShow;
+use App\Livewire\Arena\ArenaIndex;
+use App\Livewire\Arena\ChallengeRunner;
 use App\Livewire\Certification\CertificationList;
 use App\Livewire\Certification\CertificationRunner;
 use App\Livewire\Exercises\ExercisePlayer;
@@ -29,6 +31,9 @@ Route::middleware([
 
     Route::get('/exercices', ExerciseIndexController::class)->name('exercises.index');
     Route::get('/exercices/{exercise:slug}', ExercisePlayer::class)->name('exercises.show');
+
+    Route::get('/arene', ArenaIndex::class)->name('arena.index');
+    Route::get('/arene/{challenge:slug}', ChallengeRunner::class)->name('arena.show');
 
     Route::get('/certifications', CertificationList::class)->name('certifications.index');
     Route::get('/certifications/tentatives/{attempt}', CertificationRunner::class)->name('certifications.attempt');

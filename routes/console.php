@@ -3,6 +3,7 @@
 use App\Actions\Certifications\FinishCertificationAttempt;
 use App\Enums\AttemptStatus;
 use App\Models\CertificationAttempt;
+use App\Services\Challenges\DailyChallengeGenerator;
 use App\Services\Gamification\LeaderboardService;
 use App\Services\Sandbox\Drivers\MysqlDriver;
 use App\Services\Sandbox\Drivers\PostgresDriver;
@@ -64,3 +65,11 @@ Artisan::command('certifications:expire', function (FinishCertificationAttempt $
 })->purpose('Clôture les tentatives de certification dont le temps est écoulé');
 
 Schedule::command('certifications:expire')->everyMinute();
+
+Artisan::command('challenges:daily', function (DailyChallengeGenerator $generator) {
+    $challenge = $generator->ensureFor();
+
+    $this->info($challenge ? "Défi du jour : {$challenge->title}" : 'Aucun exercice disponible pour le défi du jour.');
+})->purpose('Crée le défi du jour s\'il n\'existe pas encore');
+
+Schedule::command('challenges:daily')->dailyAt('00:01');

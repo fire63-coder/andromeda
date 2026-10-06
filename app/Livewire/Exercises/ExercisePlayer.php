@@ -12,6 +12,7 @@ use App\Models\ChallengeParticipation;
 use App\Models\Exercise;
 use App\Models\SqlDialect;
 use App\Models\UserProgress;
+use App\Models\UserSubmission;
 use App\Services\Datasets\SchemaIntrospector;
 use App\Services\Evaluation\SubmissionEvaluator;
 use App\Services\Sandbox\QueryResult;
@@ -338,9 +339,27 @@ class ExercisePlayer extends Component
                 $submission->score,
             );
             $this->verdict['points'] = $submission->feedback['points'] ?? 0;
+            $this->notifyGains($submission);
         }
 
         $this->dispatch('answer-recorded', exerciseId: $this->exercise->id);
+    }
+
+    /**
+     * XP et badges gagnés pendant un défi : notifications et compteur de la barre de navigation.
+     */
+    private function notifyGains(UserSubmission $submission): void
+    {
+        $badges = auth()->user()->badges()->wherePivot('awarded_at', '>=', $submission->created_at)->get();
+
+        if ($submission->xp_awarded > 0 || $badges->isNotEmpty()) {
+            $this->dispatch('xp-gained', amount: $submission->xp_awarded + $badges->sum('xp_bonus'), total: auth()->user()->fresh()->xp);
+            $this->dispatch('refresh-navigation-menu');
+        }
+
+        foreach ($badges as $badge) {
+            $this->dispatch('badge-unlocked', name: $badge->name, description: $badge->description, tier: $badge->tier->value, icon: $badge->icon);
+        }
     }
 
     /**

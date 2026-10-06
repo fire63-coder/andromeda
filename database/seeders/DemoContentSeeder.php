@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Enums\ChallengeType;
 use App\Enums\ContentStatus;
 use App\Enums\DatasetFormat;
 use App\Enums\DatasetRole;
@@ -9,6 +10,7 @@ use App\Enums\DatasetStatus;
 use App\Enums\ExerciseType;
 use App\Enums\ValidationStrategy;
 use App\Models\Certification;
+use App\Models\Challenge;
 use App\Models\Course;
 use App\Models\Dataset;
 use App\Models\Exercise;
@@ -132,6 +134,7 @@ class DemoContentSeeder extends Seeder
         ]);
 
         $this->certification($intermediate, [$boutique, $hidden], $mcq);
+        $this->sprint();
 
         $this->exercise($joins, $intermediate, [$boutique, $hidden], ['dml'], [
             'slug' => 'hausse-prix-livres',
@@ -225,6 +228,32 @@ class DemoContentSeeder extends Seeder
         ]);
 
         $certification->exercisePool()->sync([...$exercises->pluck('id'), $mcq->id]);
+    }
+
+    /**
+     * Contre-la-montre de démonstration : 10 minutes de chrono individuel.
+     */
+    private function sprint(): void
+    {
+        $challenge = Challenge::updateOrCreate(['slug' => 'sprint-sql-10-minutes'], [
+            'type' => ChallengeType::Timed,
+            'title' => 'Sprint SQL — 10 minutes',
+            'description' => 'Trois exercices à enchaîner le plus vite possible : le chrono démarre quand vous cliquez.',
+            'starts_at' => now()->subDay()->startOfDay(),
+            'ends_at' => now()->addMonths(2)->startOfDay(),
+            'duration_seconds' => 600,
+            'xp_multiplier' => 1.5,
+            'status' => ContentStatus::Published,
+        ]);
+
+        $challenge->exercises()->sync(
+            Exercise::whereIn('slug', ['clients-de-lyon', 'categories-bien-fournies', 'chiffre-affaires-par-client'])
+                ->orderBy('difficulty')
+                ->get()
+                ->values()
+                ->mapWithKeys(fn (Exercise $exercise, int $index) => [$exercise->id => ['points' => 100 * $exercise->difficulty, 'position' => $index]])
+                ->all()
+        );
     }
 
     private function dataset(SchemaIntrospector $introspector, string $slug, string $name, string $description, string $schema, string $seed, bool $public): Dataset

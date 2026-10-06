@@ -18,6 +18,9 @@
                     <x-nav-link href="{{ route('exercises.index') }}" :active="request()->routeIs('exercises.*')">
                         Exercices
                     </x-nav-link>
+                    <x-nav-link href="{{ route('arena.index') }}" :active="request()->routeIs('arena.*')">
+                        Arène
+                    </x-nav-link>
                     <x-nav-link href="{{ route('certifications.index') }}" :active="request()->routeIs('certifications.*')">
                         Certifications
                     </x-nav-link>
@@ -163,6 +166,9 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link href="{{ route('exercises.index') }}" :active="request()->routeIs('exercises.*')">
                 Exercices
+            </x-responsive-nav-link>
+            <x-responsive-nav-link href="{{ route('arena.index') }}" :active="request()->routeIs('arena.*')">
+                Arène
             </x-responsive-nav-link>
             <x-responsive-nav-link href="{{ route('certifications.index') }}" :active="request()->routeIs('certifications.*')">
                 Certifications

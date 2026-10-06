@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ChallengeType;
 use App\Enums\ContentStatus;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -49,6 +50,29 @@ class Challenge extends Model
     public function participations(): HasMany
     {
         return $this->hasMany(ChallengeParticipation::class);
+    }
+
+    public function isRunning(): bool
+    {
+        return $this->status === ContentStatus::Published
+            && $this->starts_at->isPast()
+            && ($this->ends_at === null || $this->ends_at->isFuture());
+    }
+
+    /**
+     * Classement du défi : points décroissants, puis temps de la dernière réussite.
+     *
+     * @return Collection<int, ChallengeParticipation>
+     */
+    public function standings(int $limit = 10)
+    {
+        return $this->participations()
+            ->where('score', '>', 0)
+            ->with('user:id,name,profile_photo_path')
+            ->orderByDesc('score')
+            ->orderBy('total_time_ms')
+            ->limit($limit)
+            ->get();
     }
 
     public function scopeRunning(Builder $query): Builder
