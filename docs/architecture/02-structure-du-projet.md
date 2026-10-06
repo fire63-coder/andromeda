@@ -22,7 +22,7 @@ app/
 │   │   ├── LessonViewer.php       #   Markdown rendu + blocs SQL exécutables + schéma Mermaid
 │   │   └── LessonPlayground.php   #   mini-éditeur embarqué dans une leçon
 │   ├── Exercises/
-│   │   ├── ExercisePlayer.php     #   ★ page d'exercice : éditeur, Exécuter / Valider, verdict (étape 3)
+│   │   ├── ExercisePlayer.php     #   ✅ page d'exercice : éditeur, Exécuter / Valider, verdict, schéma, indices, QCM
 │   │   ├── ResultGrid.php         #   tableau de résultats + diff attendu/obtenu
 │   │   ├── SchemaExplorer.php     #   tables / colonnes / clés du dataset (panneau latéral)
 │   │   ├── HintPanel.php
@@ -56,13 +56,13 @@ app/
 │       └── Users/{UserIndex, UserForm}.php
 │
 ├── Services/
-│   ├── Sandbox/
+│   ├── Sandbox/                              # ✅ SQLite + PostgreSQL (voir 03-sandbox-et-evaluation.md)
 │   │   ├── Contracts/SandboxDriver.php       # provision(), execute(), reset(), destroy()
 │   │   ├── Drivers/{Sqlite, Postgres, MySql, SqlServer, Oracle}Driver.php
 │   │   ├── SandboxManager.php                # choisit le driver selon le dialecte, réutilise / crée la session
 │   │   ├── QueryGuard.php                    # liste blanche d'instructions, mots interdits, multi-statements
 │   │   └── QueryResult.php                   # DTO : columns, rows, rowCount, durationMs, error
-│   ├── Evaluation/
+│   ├── Evaluation/                           # ✅
 │   │   ├── SubmissionEvaluator.php           # orchestre : guard → exécution sur chaque dataset → comparaison
 │   │   ├── Comparators/{ResultSet, OrderedResultSet, StateCheck, Choices}Comparator.php
 │   │   ├── ResultNormalizer.php              # types, NULL, flottants, casse, noms de colonnes
@@ -72,9 +72,9 @@ app/
 │   │   ├── SchemaIntrospector.php            # remplit tables_meta + diagramme Mermaid
 │   │   └── DialectTranslator.php             # DDL canonique → DDL par dialecte (types, quoting, identity)
 │   ├── Gamification/
-│   │   ├── XpService.php                     # écrit xp_transactions, met à jour users.xp et le rang
+│   │   ├── XpService.php                     # ✅ écrit xp_transactions, met à jour users.xp et le rang
 │   │   ├── BadgeEvaluator.php                # évalue badges.criteria
-│   │   ├── StreakService.php
+│   │   ├── StreakService.php                 # ✅
 │   │   └── LeaderboardService.php
 │   └── Content/
 │       └── MarkdownRenderer.php              # Markdown → HTML (+ blocs ```sql runnable, mermaid)

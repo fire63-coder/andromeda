@@ -40,6 +40,14 @@
 
         @stack('modals')
 
+        {{-- Notification de gain d'XP (événement Livewire « xp-gained ») --}}
+        <div x-data="{ show: false, amount: 0, total: 0, timer: null }"
+             x-on:xp-gained.window="amount = $event.detail.amount; total = $event.detail.total; show = true; clearTimeout(timer); timer = setTimeout(() => show = false, 4000)"
+             x-show="show" x-transition.opacity x-cloak role="status"
+             class="pointer-events-none fixed bottom-6 end-6 z-50 rounded-xl bg-amber-400 px-5 py-3 font-semibold text-amber-950 shadow-lg">
+            +<span x-text="amount"></span> XP · total <span x-text="total"></span>
+        </div>
+
         @livewireScripts
     </body>
 </html>

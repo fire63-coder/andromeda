@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\Sandbox\SandboxManager;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,7 +12,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Garde les moteurs (et leurs schémas déjà provisionnés) en mémoire pendant la requête.
+        $this->app->singleton(SandboxManager::class);
     }
 
     /**

@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\ExerciseIndexController;
+use App\Livewire\Exercises\ExercisePlayer;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -14,4 +16,7 @@ Route::middleware([
     Route::get('/dashboard', function () {
         return view('dashboard');
     })->name('dashboard');
+
+    Route::get('/exercices', ExerciseIndexController::class)->name('exercises.index');
+    Route::get('/exercices/{exercise:slug}', ExercisePlayer::class)->name('exercises.show');
 });

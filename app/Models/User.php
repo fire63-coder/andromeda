@@ -27,6 +27,21 @@ class User extends Authenticatable
     use TwoFactorAuthenticatable;
 
     /**
+     * Valeurs par défaut en mémoire (identiques aux défauts SQL), pour un utilisateur
+     * tout juste créé et pas encore relu depuis la base.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'role' => 'student',
+        'xp' => 0,
+        'current_streak' => 0,
+        'longest_streak' => 0,
+        'leaderboard_visible' => true,
+        'is_active' => true,
+    ];
+
+    /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>

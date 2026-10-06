@@ -35,6 +35,8 @@ class DatabaseSeeder extends Seeder
             User::factory(10)->create()->each(
                 fn (User $user) => $user->forceFill(['rank_id' => $novice?->id])->save()
             );
+
+            $this->call(DemoContentSeeder::class);
         }
     }
 }
