@@ -1,5 +1,8 @@
 <?php
 
+use App\Actions\Certifications\FinishCertificationAttempt;
+use App\Enums\AttemptStatus;
+use App\Models\CertificationAttempt;
 use App\Services\Gamification\LeaderboardService;
 use App\Services\Sandbox\Drivers\MysqlDriver;
 use App\Services\Sandbox\Drivers\PostgresDriver;
@@ -48,3 +51,16 @@ Artisan::command('sandbox:setup-mysql {--superuser=root : Superutilisateur MySQL
 
     $this->info("Comptes « {$config['owner_username']} » (chargement) et « {$config['runner_username']} » (exécution) prêts.");
 })->purpose('Crée les comptes MySQL sans privilèges de la sandbox');
+
+Artisan::command('certifications:expire', function (FinishCertificationAttempt $finish) {
+    $expired = CertificationAttempt::query()
+        ->where('status', AttemptStatus::InProgress)
+        ->where('expires_at', '<', now())
+        ->get();
+
+    $expired->each(fn (CertificationAttempt $attempt) => $finish->handle($attempt));
+
+    $this->info($expired->count().' tentative(s) clôturée(s).');
+})->purpose('Clôture les tentatives de certification dont le temps est écoulé');
+
+Schedule::command('certifications:expire')->everyMinute();

@@ -113,4 +113,18 @@ class Exercise extends Model
     {
         return $query->where('status', ContentStatus::Published);
     }
+
+    /**
+     * Exercices d'entraînement : publiés et rattachés à une leçon. Les exercices sans leçon
+     * sont réservés aux certifications et aux défis (pas d'entraînement préalable possible).
+     */
+    public function scopePractice(Builder $query): Builder
+    {
+        return $query->published()->whereNotNull('exercises.lesson_id');
+    }
+
+    public function isPractice(): bool
+    {
+        return $this->status === ContentStatus::Published && $this->lesson_id !== null;
+    }
 }

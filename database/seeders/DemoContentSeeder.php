@@ -8,6 +8,7 @@ use App\Enums\DatasetRole;
 use App\Enums\DatasetStatus;
 use App\Enums\ExerciseType;
 use App\Enums\ValidationStrategy;
+use App\Models\Certification;
 use App\Models\Course;
 use App\Models\Dataset;
 use App\Models\Exercise;
@@ -130,6 +131,8 @@ class DemoContentSeeder extends Seeder
             ['body' => 'LIMIT', 'is_correct' => false, 'explanation' => 'LIMIT tronque le résultat, sans condition sur les groupes.', 'position' => 4],
         ]);
 
+        $this->certification($intermediate, [$boutique, $hidden], $mcq);
+
         $this->exercise($joins, $intermediate, [$boutique, $hidden], ['dml'], [
             'slug' => 'hausse-prix-livres',
             'title' => 'Inflation sur les livres',
@@ -149,6 +152,79 @@ class DemoContentSeeder extends Seeder
             'difficulty' => 2,
             'xp_reward' => 30,
         ]);
+    }
+
+    /**
+     * Exercices réservés à la certification (sans leçon : invisibles en entraînement) et certification.
+     *
+     * @param  list<Dataset>  $datasets
+     */
+    private function certification(Level $level, array $datasets, Exercise $mcq): void
+    {
+        $exercises = collect([
+            [
+                'slug' => 'cert-clients-sans-commande',
+                'title' => 'Clients sans commande',
+                'statement' => 'Affichez le nom (`name`) des clients qui n\'ont **jamais** passé de commande.',
+                'solution_sql' => 'SELECT name FROM customers WHERE id NOT IN (SELECT customer_id FROM orders);',
+                'validation_strategy' => ValidationStrategy::ResultSet,
+                'skills' => ['subqueries', 'joins'],
+            ],
+            [
+                'slug' => 'cert-panier-moyen',
+                'title' => 'Montant moyen d\'une ligne de commande',
+                'statement' => 'Calculez le montant moyen d\'une ligne de commande (`quantity × unit_price`), arrondi à 2 décimales, dans une colonne `montant_moyen`.',
+                'solution_sql' => 'SELECT ROUND(AVG(quantity * unit_price), 2) AS montant_moyen FROM order_items;',
+                'validation_strategy' => ValidationStrategy::ResultSet,
+                'validation_options' => ['float_tolerance' => 0.01],
+                'skills' => ['aggregation', 'functions'],
+            ],
+            [
+                'slug' => 'cert-commandes-par-statut',
+                'title' => 'Commandes par statut',
+                'statement' => 'Affichez chaque statut de commande avec son nombre de commandes (`nb`), du plus fréquent au moins fréquent, puis par statut en ordre alphabétique.',
+                'solution_sql' => 'SELECT status, COUNT(*) AS nb FROM orders GROUP BY status ORDER BY nb DESC, status;',
+                'validation_strategy' => ValidationStrategy::OrderedResultSet,
+                'skills' => ['aggregation', 'sorting'],
+            ],
+        ])->map(function (array $attributes) use ($level, $datasets) {
+            $skills = $attributes['skills'];
+            unset($attributes['skills']);
+
+            $exercise = Exercise::updateOrCreate(['slug' => $attributes['slug']], [
+                'validation_options' => null,
+                ...$attributes,
+                'lesson_id' => null,
+                'level_id' => $level->id,
+                'type' => ExerciseType::QueryWrite,
+                'difficulty' => 2,
+                'xp_reward' => 0,
+                'status' => ContentStatus::Published,
+                'published_at' => now(),
+            ]);
+
+            $exercise->datasets()->sync(collect($datasets)->mapWithKeys(fn (Dataset $dataset, int $index) => [
+                $dataset->id => ['role' => $index === 0 ? DatasetRole::Primary->value : DatasetRole::HiddenTest->value, 'position' => $index],
+            ])->all());
+            $exercise->skills()->sync(Skill::whereIn('slug', $skills)->pluck('id'));
+
+            return $exercise;
+        });
+
+        $certification = Certification::updateOrCreate(['slug' => 'sql-intermediaire'], [
+            'level_id' => $level->id,
+            'title' => 'Certification SQL — Intermédiaire',
+            'description' => 'Jointures, sous-requêtes, agrégats et tris : 3 questions tirées au sort, 20 minutes.',
+            'passing_score' => 70,
+            'duration_minutes' => 20,
+            'exercises_count' => 3,
+            'max_attempts' => 3,
+            'cooldown_hours' => 1,
+            'xp_reward' => 150,
+            'status' => ContentStatus::Published,
+        ]);
+
+        $certification->exercisePool()->sync([...$exercises->pluck('id'), $mcq->id]);
     }
 
     private function dataset(SchemaIntrospector $introspector, string $slug, string $name, string $description, string $schema, string $seed, bool $public): Dataset

@@ -20,7 +20,7 @@ class ExerciseIndexController extends Controller
 
         $levels = Level::query()
             ->orderBy('position')
-            ->with(['exercises' => fn ($query) => $query->published()->with('skills')->orderBy('difficulty')->orderBy('position')])
+            ->with(['exercises' => fn ($query) => $query->practice()->with('skills')->orderBy('difficulty')->orderBy('position')])
             ->get()
             ->filter(fn (Level $level) => $level->exercises->isNotEmpty());
 

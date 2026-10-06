@@ -2,17 +2,17 @@
 
 namespace App\Policies;
 
-use App\Enums\ContentStatus;
 use App\Models\Exercise;
 use App\Models\User;
 
 class ExercisePolicy
 {
     /**
-     * Les exercices publiés sont ouverts à tous ; les brouillons à l'équipe pédagogique (aperçu).
+     * Entraînement libre : exercices publiés rattachés à une leçon. Brouillons et exercices
+     * réservés (certifications, défis) : équipe pédagogique uniquement (aperçu).
      */
     public function view(User $user, Exercise $exercise): bool
     {
-        return $exercise->status === ContentStatus::Published || $user->canAuthorContent();
+        return $exercise->isPractice() || $user->canAuthorContent();
     }
 }

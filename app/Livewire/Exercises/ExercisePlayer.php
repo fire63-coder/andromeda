@@ -3,8 +3,12 @@
 namespace App\Livewire\Exercises;
 
 use App\Actions\Exercises\SubmitAnswer;
+use App\Contracts\ExerciseContext;
 use App\Enums\ExerciseType;
 use App\Enums\SubmissionStatus;
+use App\Exceptions\ContextClosed;
+use App\Models\CertificationAttempt;
+use App\Models\ChallengeParticipation;
 use App\Models\Exercise;
 use App\Models\SqlDialect;
 use App\Models\UserProgress;
@@ -36,6 +40,14 @@ class ExercisePlayer extends Component
     #[Locked]
     public Exercise $exercise;
 
+    /** practice (entraînement) | certification (épreuve) | challenge (défi) */
+    #[Locked]
+    public string $mode = 'practice';
+
+    /** Tentative de certification ou participation à un défi, selon le mode. */
+    #[Locked]
+    public ?int $contextId = null;
+
     public string $sql = '';
 
     /** Slug du dialecte choisi (sql_dialects.slug). */
@@ -56,19 +68,31 @@ class ExercisePlayer extends Component
     /** Dernier verdict de validation. */
     public ?array $verdict = null;
 
-    public function mount(Exercise $exercise, SubmissionEvaluator $evaluator): void
+    public function mount(Exercise $exercise, SubmissionEvaluator $evaluator, string $mode = 'practice', ?int $contextId = null): void
     {
-        $this->authorize('view', $exercise);
-
         $this->exercise = $exercise;
+        $this->mode = in_array($mode, ['practice', 'certification', 'challenge'], true) ? $mode : 'practice';
+        $this->contextId = $contextId;
+
+        if ($this->mode === 'practice') {
+            $this->authorize('view', $exercise);
+        } else {
+            // En épreuve, l'accès vient du contexte : l'exercice doit en faire partie.
+            abort_unless($this->context()?->includes($exercise), 403);
+        }
+
         $this->sql = $exercise->starter_sql ?? '';
         $this->dialect = $evaluator->defaultDialect($exercise, auth()->user())?->slug;
-        $this->startedAt = $exercise->time_limit_seconds ? now()->toIso8601String() : null;
+        $this->startedAt = $exercise->time_limit_seconds && $this->mode === 'practice' ? now()->toIso8601String() : null;
 
-        // L'élève reprend là où il en était : indices déjà consultés lors de sa dernière soumission.
-        $this->hintsRevealed = (int) auth()->user()->submissions()
-            ->where('exercise_id', $exercise->id)
-            ->max('hints_used');
+        if ($this->mode === 'practice') {
+            // L'élève reprend là où il en était : indices déjà consultés lors de sa dernière soumission.
+            $this->hintsRevealed = (int) auth()->user()->submissions()
+                ->where('exercise_id', $exercise->id)
+                ->max('hints_used');
+        } else {
+            $this->restoreLastAnswer();
+        }
     }
 
     public function run(SubmissionEvaluator $evaluator): void
@@ -101,6 +125,12 @@ class ExercisePlayer extends Component
 
         if (! $dialect && $this->isSqlExercise()) {
             $this->verdict = $this->verdictPayload(SubmissionStatus::Error, 'Aucun moteur SQL n\'est disponible pour cet exercice.');
+
+            return;
+        }
+
+        if ($this->mode !== 'practice') {
+            $this->submitInContext($dialect ?? SqlDialect::where('is_default', true)->firstOrFail());
 
             return;
         }
@@ -143,7 +173,7 @@ class ExercisePlayer extends Component
 
     public function revealHint(): void
     {
-        if ($this->hintsRevealed < count($this->exercise->hints ?? [])) {
+        if ($this->mode === 'practice' && $this->hintsRevealed < count($this->exercise->hints ?? [])) {
             $this->hintsRevealed++;
         }
     }
@@ -173,7 +203,10 @@ class ExercisePlayer extends Component
     #[Computed]
     public function dialects(): Collection
     {
-        return app(SubmissionEvaluator::class)->availableDialects($this->exercise);
+        $dialects = app(SubmissionEvaluator::class)->availableDialects($this->exercise);
+        $imposed = $this->context()?->imposedDialectId();
+
+        return $imposed ? $dialects->where('id', $imposed)->values() : $dialects;
     }
 
     /**
@@ -234,6 +267,22 @@ class ExercisePlayer extends Component
         return $this->exercise->progress()->where('user_id', auth()->id())->first();
     }
 
+    /**
+     * Contexte d'épreuve de l'utilisateur courant (null en entraînement).
+     */
+    public function context(): ?ExerciseContext
+    {
+        if ($this->contextId === null) {
+            return null;
+        }
+
+        return once(fn () => match ($this->mode) {
+            'certification' => CertificationAttempt::query()->where('user_id', auth()->id())->find($this->contextId),
+            'challenge' => ChallengeParticipation::query()->where('user_id', auth()->id())->find($this->contextId),
+            default => null,
+        });
+    }
+
     public function isSqlExercise(): bool
     {
         return $this->exercise->type !== ExerciseType::MultipleChoice;
@@ -249,6 +298,62 @@ class ExercisePlayer extends Component
         return view('livewire.exercises.exercise-player', [
             'choices' => $this->isSqlExercise() ? collect() : $this->exercise->choices,
         ]);
+    }
+
+    private function submitInContext(SqlDialect $dialect): void
+    {
+        $context = $this->context();
+        abort_unless($context, 403);
+
+        try {
+            $submission = $context->recordAnswer(
+                $this->exercise,
+                $dialect,
+                $this->isSqlExercise() ? $this->sql : null,
+                array_map('intval', $this->selectedChoices),
+            );
+        } catch (ContextClosed $e) {
+            $this->verdict = $this->verdictPayload(SubmissionStatus::Rejected, $e->getMessage());
+
+            return;
+        }
+
+        $this->result = $submission->result_preview;
+
+        if ($this->mode === 'certification') {
+            // En certification, le verdict n'est révélé qu'à la fin de l'épreuve.
+            $this->verdict = [
+                'status' => 'recorded',
+                'label' => 'Réponse enregistrée',
+                'message' => 'Vous pouvez la modifier jusqu\'à la fin de l\'épreuve : c\'est la dernière réponse qui compte.',
+                'score' => 0,
+                'xp' => 0,
+                'feedback' => [],
+            ];
+        } else {
+            $this->verdict = $this->verdictPayload(
+                $submission->status,
+                $submission->feedback['message'] ?? '',
+                $submission->feedback ?? [],
+                $submission->score,
+            );
+            $this->verdict['points'] = $submission->feedback['points'] ?? 0;
+        }
+
+        $this->dispatch('answer-recorded', exerciseId: $this->exercise->id);
+    }
+
+    /**
+     * En épreuve, on retrouve la dernière réponse donnée à cette question.
+     */
+    private function restoreLastAnswer(): void
+    {
+        $last = $this->context()?->submissions()->where('exercise_id', $this->exercise->id)->latest('id')->first();
+
+        if ($last) {
+            $this->sql = $last->query_sql ?? $this->sql;
+            $this->selectedChoices = $last->selected_choice_ids ?? [];
+        }
     }
 
     /**

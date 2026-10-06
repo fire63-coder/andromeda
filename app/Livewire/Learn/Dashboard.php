@@ -57,7 +57,7 @@ class Dashboard extends Component
     {
         return Level::query()
             ->orderBy('position')
-            ->with(['exercises' => fn ($q) => $q->published()->select('id', 'level_id')])
+            ->with(['exercises' => fn ($q) => $q->practice()->select('id', 'level_id')])
             ->get()
             ->map(fn (Level $level) => [
                 'level' => $level,
@@ -91,7 +91,7 @@ class Dashboard extends Component
     public function nextExercise(): ?Exercise
     {
         return Exercise::query()
-            ->published()
+            ->practice()
             ->whereNotIn('exercises.id', $this->solvedIds)
             ->join('levels', 'levels.id', '=', 'exercises.level_id')
             ->orderBy('levels.position')

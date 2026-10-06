@@ -5,11 +5,13 @@
         'error' => 'border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200',
         'timeout' => 'border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200',
         'rejected' => 'border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200',
+        'recorded' => 'border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200',
     ];
-    $solved = $this->progress?->status === \App\Enums\ProgressStatus::Completed;
+    $practice = $mode === 'practice';
+    $solved = $practice && $this->progress?->status === \App\Enums\ProgressStatus::Completed;
 @endphp
 
-<div class="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
+<div @class(['mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8' => $practice])>
     <div class="grid gap-6 lg:grid-cols-5">
 
         {{-- ─── Colonne gauche : énoncé, schéma, indices ─── --}}
@@ -26,14 +28,16 @@
                     @if ($solved)
                         <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">✓ Résolu</span>
                     @endif
-                    <span class="ms-auto rounded-full bg-amber-100 px-2.5 py-1 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" title="XP gagnés à la première réussite">
-                        {{ $solved ? 'XP déjà obtenus' : '+'.$this->potentialXp.' XP' }}
-                    </span>
+                    @if ($practice)
+                        <span class="ms-auto rounded-full bg-amber-100 px-2.5 py-1 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300" title="XP gagnés à la première réussite">
+                            {{ $solved ? 'XP déjà obtenus' : '+'.$this->potentialXp.' XP' }}
+                        </span>
+                    @endif
                 </div>
 
                 <h1 class="mt-4 text-xl font-semibold text-gray-900 dark:text-white">{{ $exercise->title }}</h1>
 
-                <div class="prose prose-sm mt-3 max-w-none dark:prose-invert">
+                <div class="prose prose-sm mt-3 max-w-none dark:prose-invert prose-code:before:content-none prose-code:after:content-none">
                     {!! $this->statementHtml !!}
                 </div>
 
@@ -76,14 +80,14 @@
                 </article>
             @endif
 
-            @if (! empty($exercise->hints))
+            @if ($practice && ! empty($exercise->hints))
                 <article class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10">
                     <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
                         Indices ({{ $hintsRevealed }}/{{ count($exercise->hints) }})
                     </h2>
                     <ol class="mt-3 space-y-2 text-sm">
                         @foreach ($this->revealedHints as $hint)
-                            <li class="prose prose-sm max-w-none rounded-lg bg-indigo-50 px-3 py-2 dark:prose-invert dark:bg-indigo-500/10">
+                            <li class="prose prose-sm max-w-none rounded-lg bg-indigo-50 px-3 py-2 dark:prose-invert dark:bg-indigo-500/10 prose-code:before:content-none prose-code:after:content-none">
                                 {!! Str::markdown($hint['text'], ['html_input' => 'strip', 'allow_unsafe_links' => false]) !!}
                             </li>
                         @endforeach
@@ -173,7 +177,7 @@
                 <div wire:key="verdict-{{ md5(json_encode($verdict)) }}" role="status" data-testid="verdict"
                      class="rounded-xl border px-5 py-4 {{ $verdictStyles[$verdict['status']] ?? $verdictStyles['error'] }}">
                     <div class="flex items-start gap-3">
-                        <span class="text-xl leading-none">{{ ['correct' => '🎉', 'wrong' => '🧐', 'rejected' => '🛑'][$verdict['status']] ?? '⚠️' }}</span>
+                        <span class="text-xl leading-none">{{ ['correct' => '🎉', 'wrong' => '🧐', 'rejected' => '🛑', 'recorded' => '📝'][$verdict['status']] ?? '⚠️' }}</span>
                         <div class="flex-1">
                             <p class="font-semibold">{{ $verdict['label'] }}@if ($verdict['score'] > 0 && $verdict['score'] < 100) · {{ $verdict['score'] }} %@endif</p>
                             <p class="mt-1 text-sm">{{ $verdict['message'] }}</p>
@@ -213,6 +217,8 @@
                         </div>
                         @if ($verdict['xp'] > 0)
                             <span class="rounded-full bg-amber-400 px-3 py-1 text-sm font-bold text-amber-950">+{{ $verdict['xp'] }} XP</span>
+                        @elseif (($verdict['points'] ?? 0) > 0)
+                            <span class="rounded-full bg-amber-400 px-3 py-1 text-sm font-bold text-amber-950">+{{ $verdict['points'] }} pts</span>
                         @endif
                     </div>
                 </div>
