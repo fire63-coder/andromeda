@@ -15,4 +15,26 @@ class ExercisePolicy
     {
         return $exercise->isPractice() || $user->canAuthorContent();
     }
+
+    public function viewAny(User $user): bool
+    {
+        return $user->canAuthorContent();
+    }
+
+    public function create(User $user): bool
+    {
+        return $user->canAuthorContent();
+    }
+
+    /** Formateur : ses exercices ; administrateur : tous. */
+    public function update(User $user, Exercise $exercise): bool
+    {
+        return $user->isAdmin() || ($user->canAuthorContent() && $exercise->author_id === $user->id);
+    }
+
+    /** Publication après relecture : administrateurs uniquement. */
+    public function publish(User $user): bool
+    {
+        return $user->isAdmin();
+    }
 }

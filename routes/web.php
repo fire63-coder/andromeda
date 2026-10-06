@@ -8,6 +8,8 @@ use App\Livewire\Admin\Courses\LessonEditor;
 use App\Livewire\Admin\Datasets\DatasetImportWizard;
 use App\Livewire\Admin\Datasets\DatasetIndex;
 use App\Livewire\Admin\Datasets\DatasetShow;
+use App\Livewire\Admin\Exercises\ExerciseEditor;
+use App\Livewire\Admin\Exercises\ExerciseIndex;
 use App\Livewire\Arena\ArenaIndex;
 use App\Livewire\Arena\ChallengeRunner;
 use App\Livewire\Certification\CertificationList;
@@ -55,6 +57,10 @@ Route::middleware([
         Route::get('/cours/creer', CourseEditor::class)->name('courses.create');
         Route::get('/cours/{course:slug}', CourseEditor::class)->name('courses.edit');
         Route::get('/lecons/{lesson}', LessonEditor::class)->name('lessons.edit');
+
+        Route::get('/exercices', ExerciseIndex::class)->name('exercises.index');
+        Route::get('/exercices/creer', ExerciseEditor::class)->name('exercises.create');
+        Route::get('/exercices/{exercise}', ExerciseEditor::class)->name('exercises.edit');
 
         Route::get('/datasets', DatasetIndex::class)->name('datasets.index');
         Route::get('/datasets/importer', DatasetImportWizard::class)->name('datasets.import');
