@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\Gamification\LeaderboardService;
+use App\Services\Sandbox\Drivers\MysqlDriver;
 use App\Services\Sandbox\Drivers\PostgresDriver;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -31,3 +32,19 @@ Artisan::command('leaderboard:snapshot', function (LeaderboardService $leaderboa
 })->purpose('Fige les classements du jour (progression ▲ ▼ et historique)');
 
 Schedule::command('leaderboard:snapshot')->dailyAt('00:05');
+
+Artisan::command('sandbox:setup-mysql {--superuser=root : Superutilisateur MySQL utilisé pour créer les comptes}', function () {
+    $config = config('sandbox.drivers.mysql');
+
+    if (blank($config['owner_password']) || blank($config['runner_password'])) {
+        $this->error('Définissez SANDBOX_MYSQL_OWNER_PASSWORD et SANDBOX_MYSQL_RUNNER_PASSWORD avant de lancer cette commande.');
+
+        return 1;
+    }
+
+    $password = $config['superuser_password'] ?? $this->secret("Mot de passe de {$this->option('superuser')}");
+
+    (new MysqlDriver($config))->installRoles($this->option('superuser'), (string) $password);
+
+    $this->info("Comptes « {$config['owner_username']} » (chargement) et « {$config['runner_username']} » (exécution) prêts.");
+})->purpose('Crée les comptes MySQL sans privilèges de la sandbox');

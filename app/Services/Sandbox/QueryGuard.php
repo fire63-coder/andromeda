@@ -28,6 +28,7 @@ class QueryGuard
         'QUERY_TO_XML_AND_XMLSCHEMA', 'CURSOR_TO_XML', 'PG_TERMINATE_BACKEND', 'PG_CANCEL_BACKEND',
         'PG_RELOAD_CONF', 'PG_ADVISORY_LOCK', 'PG_ADVISORY_XACT_LOCK',
         'OUTFILE', 'DUMPFILE', 'LOAD_FILE', 'XP_CMDSHELL', 'OPENROWSET', 'UTL_FILE',
+        'SLEEP', 'BENCHMARK', 'GET_LOCK', 'RELEASE_LOCK', 'RELEASE_ALL_LOCKS',
     ];
 
     /** Objets dont la création est refusée même quand le DDL est autorisé. */

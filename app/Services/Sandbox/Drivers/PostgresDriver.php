@@ -144,6 +144,11 @@ class PostgresDriver implements SandboxDriver
         );
     }
 
+    public function supportsDdl(): bool
+    {
+        return true; // DDL transactionnel.
+    }
+
     public function destroy(DatasetBuild $build): void
     {
         $pdo = $this->connect($this->config['owner_username'], $this->config['owner_password']);
@@ -194,7 +199,7 @@ class PostgresDriver implements SandboxDriver
     {
         $version = substr(md5($build->updated_at?->toIso8601String().$build->schema_sql), 0, 10);
 
-        return "ds{$build->dataset_id}_b{$build->id}_{$version}";
+        return ($this->config['schema_prefix'] ?? '')."ds{$build->dataset_id}_b{$build->id}_{$version}";
     }
 
     /**

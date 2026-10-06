@@ -4,13 +4,13 @@ namespace Tests\Feature\Sandbox;
 
 use App\Models\Dataset;
 use App\Models\SqlDialect;
-use App\Services\Sandbox\Drivers\PostgresDriver;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SandboxManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PDO;
 use PDOException;
 use PHPUnit\Framework\Attributes\Test;
+use Tests\Concerns\UsesSandbox;
 use Tests\TestCase;
 
 /**
@@ -19,6 +19,7 @@ use Tests\TestCase;
 class PostgresSandboxTest extends TestCase
 {
     use RefreshDatabase;
+    use UsesSandbox;
 
     private SandboxManager $sandbox;
 
@@ -30,6 +31,7 @@ class PostgresSandboxTest extends TestCase
     {
         parent::setUp();
         $this->seed();
+        $this->setUpSandbox();
 
         $config = config('sandbox.drivers.pgsql');
 
@@ -42,19 +44,6 @@ class PostgresSandboxTest extends TestCase
         $this->sandbox = app(SandboxManager::class);
         $this->dataset = Dataset::where('slug', 'boutique')->firstOrFail();
         $this->pgsql = SqlDialect::where('slug', 'pgsql')->firstOrFail();
-    }
-
-    protected function tearDown(): void
-    {
-        if (isset($this->dataset)) {
-            foreach ($this->dataset->builds as $build) {
-                if ($build->sql_dialect_id === $this->pgsql->id) {
-                    (new PostgresDriver(config('sandbox.drivers.pgsql')))->destroy($build);
-                }
-            }
-        }
-
-        parent::tearDown();
     }
 
     #[Test]

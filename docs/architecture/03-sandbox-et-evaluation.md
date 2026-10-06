@@ -12,7 +12,7 @@ ExercisePlayer (Livewire)                         app/Livewire/Exercises/Exercis
                 │    pour chaque jeu de l'exercice (visible, puis tests cachés) :
                 │      SandboxManager::run()        requête de l'élève
                 │        ├─ QueryGuard::inspect()   refus avant exécution
-                │        └─ Driver::execute()       SQLite ou PostgreSQL, toujours annulé
+                │        └─ Driver::execute()       SQLite, PostgreSQL ou MySQL, toujours annulé
                 │      ExpectedResultResolver       solution de référence, mise en cache
                 │      ResultSetComparator          diff colonnes / lignes, tolérance
                 ├─ user_submissions + user_progress
@@ -47,18 +47,19 @@ mais l'élève garde toujours au moins 20 % de la récompense. Les gains sont é
 
 ## 3. Défense en profondeur
 
-| Couche | SQLite | PostgreSQL |
-|---|---|---|
-| Garde-fou applicatif (`QueryGuard`) | Liste blanche par exercice ; refus permanent d'`ATTACH`, `PRAGMA`, `VACUUM`, du contrôle de transaction, de `SET`, `COPY`, `DO`, `GRANT`, des fonctions de fichiers ou de SQL dynamique (`set_config`, `pg_read_file`, `query_to_xml`, `load_extension`…) ; création de rôles, fonctions ou extensions interdite | idem |
-| Scripts de jeux de données | Validés par `QueryGuard::inspectScript()` avant construction | idem |
-| Isolation d'exécution | Processus PHP séparé : `open_basedir` limité **au seul fichier de la base**, `memory_limit`, fonctions système désactivées, processus tué au-delà du délai | Compte `andromeda_runner` sans privilèges ; `statement_timeout` et `lock_timeout` par transaction, plus des plafonds au niveau du rôle ; `set_config` révoqué |
-| Persistance | Base modèle ouverte en lecture seule, ou copie jetable pour le DML | `ROLLBACK` systématique (DML et DDL sont transactionnels) |
-| Volume | Lecture ligne à ligne, arrêt à `max_rows` | Curseur `FETCH max_rows + 1` |
-| Chargement des données | Dans le processus isolé | Compte `andromeda_owner`, sans privilèges serveur |
-| Débit | 30 exécutions par minute et par utilisateur (`sandbox.rate_limit_per_minute`) | idem |
+| Couche | SQLite | PostgreSQL | MySQL |
+|---|---|---|---|
+| Garde-fou applicatif (`QueryGuard`) | Liste blanche par exercice ; refus permanent d'`ATTACH`, `PRAGMA`, `VACUUM`, du contrôle de transaction, de `SET`, `COPY`, `DO`, `GRANT`, des fonctions de fichiers, de verrou, d'attente ou de SQL dynamique (`set_config`, `pg_read_file`, `query_to_xml`, `load_extension`, `SLEEP`, `BENCHMARK`, `GET_LOCK`…) | idem | idem, plus refus du DDL et de `TRUNCATE` (COMMIT implicite) |
+| Scripts de jeux de données | Validés par `QueryGuard::inspectScript()` | idem | idem |
+| Isolation d'exécution | Processus PHP séparé : `open_basedir` limité **au seul fichier de la base**, mémoire bornée, fonctions système désactivées, processus tué au-delà du délai | Compte `andromeda_runner` sans privilèges ; `statement_timeout` et `lock_timeout`, plus des plafonds au niveau du rôle ; `set_config` révoqué | Compte `andromeda_runner` limité à SELECT, INSERT, UPDATE et DELETE sur les bases `sbx_*` ; `max_execution_time` pour les SELECT ; `KILL QUERY` par une seconde connexion pour les modifications ; `innodb_lock_wait_timeout` |
+| Persistance | Base modèle en lecture seule, ou copie jetable | `ROLLBACK` systématique | `ROLLBACK` systématique (DML uniquement) |
+| Volume | Lecture ligne à ligne, arrêt à `max_rows` | Curseur `FETCH max_rows + 1` | Lecture non bufferisée, `KILL QUERY` à `max_rows` |
+| Chargement des données | Dans le processus isolé | Compte `andromeda_owner`, sans privilèges serveur | Compte `andromeda_owner`, limité aux bases `sbx_*` |
+| Débit | 30 exécutions par minute et par utilisateur | idem | idem |
 
 Les tests `tests/Feature/Sandbox/*` vérifient ces protections : `ATTACH` vers un autre fichier, `COPY TO PROGRAM`,
-`set_config`, timeouts, troncature, ROLLBACK.
+`set_config`, `INTO OUTFILE`, timeouts (y compris pour une modification, interrompue par `KILL QUERY`), troncature,
+ROLLBACK. Les tests PostgreSQL et MySQL sont ignorés si le serveur correspondant est absent.
 
 ## 4. Mise en place
 
@@ -69,6 +70,10 @@ Les tests `tests/Feature/Sandbox/*` vérifient ces protections : `ATTACH` vers u
 createdb andromeda_sandbox
 # .env : SANDBOX_PGSQL_* (hôte, base, mots de passe owner / runner)
 php artisan sandbox:setup-pgsql --superuser=postgres   # demande le mot de passe du superutilisateur
+
+# MySQL : serveur DÉDIÉ aux sandboxes.
+# .env : SANDBOX_MYSQL_* (hôte, mots de passe owner / runner)
+php artisan sandbox:setup-mysql --superuser=root
 ```
 
 Contenu de démonstration (en local, via `php artisan migrate --seed`) : jeu « Boutique » plus un jeu de test caché,
@@ -76,8 +81,13 @@ Contenu de démonstration (en local, via `php artisan migrate --seed`) : jeu « 
 
 ## 5. Limites connues et suites
 
-- **MySQL, SQL Server et Oracle** : dialectes déclarés mais pas encore de moteur (`is_sandbox_enabled = false`).
-  Il suffit d'ajouter une classe qui implémente `Contracts\SandboxDriver`.
+- **SQL Server et Oracle** : dialectes déclarés mais pas encore de moteur (`is_sandbox_enabled = false`).
+  Il suffit d'ajouter une classe qui implémente `Contracts\SandboxDriver`. MariaDB pourra réutiliser `MysqlDriver`.
+- **MySQL et DDL** : refusé, car le COMMIT implicite le rendrait impossible à annuler. Les exercices qui autorisent
+  le DDL ne proposent donc pas MySQL (`SandboxDriver::supportsDdl()`). Pour l'ouvrir, il faudrait une base jetable
+  par exécution.
+- **MySQL et collation** : `utf8mb4` par défaut, insensible à la casse et aux accents (`'lyon' = 'Lyon'`).
+  C'est le comportement réel de MySQL, qui diffère de PostgreSQL et SQLite.
 - **PostgreSQL et DDL** : l'élève peut créer des objets, mais pas modifier ni supprimer les tables existantes,
   qui appartiennent au compte propriétaire. À revoir pour les exercices de niveau 4.
 - **PostgreSQL et séquences** : les séquences avancent même après `ROLLBACK`. Les `check_queries` ne doivent donc pas

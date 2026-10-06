@@ -171,7 +171,7 @@ class DemoContentSeeder extends Seeder
         ]);
 
         // Le SQL de ce jeu est portable : le même script sert pour chaque moteur.
-        foreach (SqlDialect::whereIn('slug', ['sqlite', 'pgsql'])->get() as $dialect) {
+        foreach (SqlDialect::whereIn('slug', ['sqlite', 'pgsql', 'mysql'])->get() as $dialect) {
             $dataset->builds()->updateOrCreate(['sql_dialect_id' => $dialect->id], [
                 'schema_sql' => $schema,
                 'seed_sql' => $seed,

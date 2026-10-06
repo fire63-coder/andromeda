@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Sandbox\Drivers\MysqlDriver;
 use App\Services\Sandbox\Drivers\PostgresDriver;
 use App\Services\Sandbox\Drivers\SqliteDriver;
 
@@ -63,6 +64,21 @@ return [
             'lock_timeout_ms' => (int) env('SANDBOX_PGSQL_LOCK_TIMEOUT_MS', 1000),
             // Utilisé uniquement par `sandbox:setup-pgsql` (sinon le mot de passe est demandé).
             'superuser_password' => env('SANDBOX_PGSQL_SUPERUSER_PASSWORD'),
+        ],
+
+        'mysql' => [
+            'driver' => MysqlDriver::class,
+            // Serveur DÉDIÉ aux sandboxes : une base « sbx_… » par build de jeu de données.
+            'host' => env('SANDBOX_MYSQL_HOST', '127.0.0.1'),
+            'port' => (int) env('SANDBOX_MYSQL_PORT', 3306),
+            'database_prefix' => 'sbx_',
+            // Comptes créés par `php artisan sandbox:setup-mysql` (avec un superutilisateur).
+            'owner_username' => env('SANDBOX_MYSQL_OWNER_USERNAME', 'andromeda_owner'),
+            'owner_password' => env('SANDBOX_MYSQL_OWNER_PASSWORD', ''),
+            'runner_username' => env('SANDBOX_MYSQL_RUNNER_USERNAME', 'andromeda_runner'),
+            'runner_password' => env('SANDBOX_MYSQL_RUNNER_PASSWORD', ''),
+            'lock_timeout_s' => (int) env('SANDBOX_MYSQL_LOCK_TIMEOUT_S', 1),
+            'superuser_password' => env('SANDBOX_MYSQL_SUPERUSER_PASSWORD'),
         ],
 
     ],

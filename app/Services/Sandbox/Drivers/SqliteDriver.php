@@ -91,6 +91,11 @@ class SqliteDriver implements SandboxDriver
         }
     }
 
+    public function supportsDdl(): bool
+    {
+        return true; // Copie jetable de la base.
+    }
+
     public function destroy(DatasetBuild $build): void
     {
         foreach (glob($this->config['path']."/templates/ds{$build->dataset_id}_b{$build->id}_*.sqlite") ?: [] as $file) {

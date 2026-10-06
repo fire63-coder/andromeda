@@ -8,6 +8,7 @@ use App\Enums\UserRole;
 use App\Livewire\Exercises\ExercisePlayer;
 use App\Models\Exercise;
 use App\Models\User;
+use App\Services\Evaluation\SubmissionEvaluator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportLockedProperties\CannotUpdateLockedPropertyException;
 use Livewire\Livewire;
@@ -197,5 +198,17 @@ class ExercisePlayerTest extends TestCase
         $this->get(route('exercises.index'))
             ->assertOk()
             ->assertSeeInOrder(['Niveau 1', 'Les clients lyonnais', 'Niveau 2', 'Chiffre d']);
+    }
+
+    #[Test]
+    public function engines_that_cannot_roll_back_ddl_are_not_offered_for_ddl_exercises(): void
+    {
+        $exercise = $this->exercise('clients-de-lyon');
+
+        $this->assertContains('mysql', app(SubmissionEvaluator::class)->availableDialects($exercise)->pluck('slug'));
+
+        $exercise->update(['validation_options' => ['allowed_statements' => ['ddl', 'select']]]);
+
+        $this->assertNotContains('mysql', app(SubmissionEvaluator::class)->availableDialects($exercise->fresh())->pluck('slug'));
     }
 }

@@ -29,6 +29,11 @@ interface SandboxDriver
     ): QueryResult;
 
     /**
+     * Le moteur peut-il exécuter du DDL de façon annulable ?
+     */
+    public function supportsDdl(): bool;
+
+    /**
      * Supprime la ressource matérialisée du build.
      */
     public function destroy(DatasetBuild $build): void;
