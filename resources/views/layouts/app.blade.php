@@ -40,12 +40,30 @@
 
         @stack('modals')
 
-        {{-- Notification de gain d'XP (événement Livewire « xp-gained ») --}}
-        <div x-data="{ show: false, amount: 0, total: 0, timer: null }"
-             x-on:xp-gained.window="amount = $event.detail.amount; total = $event.detail.total; show = true; clearTimeout(timer); timer = setTimeout(() => show = false, 4000)"
-             x-show="show" x-transition.opacity x-cloak role="status"
-             class="pointer-events-none fixed bottom-6 end-6 z-50 rounded-xl bg-amber-400 px-5 py-3 font-semibold text-amber-950 shadow-lg">
-            +<span x-text="amount"></span> XP · total <span x-text="total"></span>
+        {{-- Notifications de gamification (événements Livewire « xp-gained », « badge-unlocked », « rank-up ») --}}
+        <div x-data="{
+                items: [],
+                push(item) {
+                    const id = Date.now() + Math.random();
+                    this.items.push({ id, ...item });
+                    setTimeout(() => this.items = this.items.filter(i => i.id !== id), item.kind === 'xp' ? 4000 : 7000);
+                },
+             }"
+             x-on:xp-gained.window="push({ kind: 'xp', title: `+${$event.detail.amount} XP`, text: `Total : ${$event.detail.total} XP` })"
+             x-on:badge-unlocked.window="push({ kind: 'badge', icon: $event.detail.icon ?? '🏅', title: `Badge débloqué : ${$event.detail.name}`, text: $event.detail.description })"
+             x-on:rank-up.window="push({ kind: 'rank', icon: '⭐', title: 'Nouveau rang !', text: $event.detail.name })"
+             class="pointer-events-none fixed bottom-6 end-6 z-50 flex w-80 flex-col gap-2" role="status" aria-live="polite">
+            <template x-for="item in items" :key="item.id">
+                <div x-transition.opacity
+                     :class="item.kind === 'xp' ? 'bg-amber-400 text-amber-950' : 'bg-gray-900 text-white ring-1 ring-amber-400/60 dark:bg-gray-800'"
+                     class="flex items-start gap-3 rounded-xl px-4 py-3 shadow-lg">
+                    <span x-show="item.icon" x-text="item.icon" class="text-2xl leading-none"></span>
+                    <div>
+                        <p class="font-semibold" x-text="item.title"></p>
+                        <p class="text-sm opacity-80" x-text="item.text"></p>
+                    </div>
+                </div>
+            </template>
         </div>
 
         @livewireScripts

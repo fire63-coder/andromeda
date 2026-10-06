@@ -9,7 +9,6 @@ use App\Models\Exercise;
 use App\Models\SqlDialect;
 use App\Models\User;
 use App\Models\UserProgress;
-use App\Models\UserSubmission;
 use App\Services\Evaluation\EvaluationResult;
 use App\Services\Evaluation\SubmissionEvaluator;
 use App\Services\Gamification\StreakService;
@@ -42,7 +41,7 @@ class SubmitAnswer
         array $choiceIds = [],
         int $hintsUsed = 0,
         ?Carbon $startedAt = null,
-    ): UserSubmission {
+    ): SubmissionOutcome {
         $evaluation = $this->timeLimitExceeded($exercise, $startedAt)
             ? new EvaluationResult(SubmissionStatus::Timeout, 0, 'Temps écoulé : ce défi chronométré est terminé.')
             : $this->evaluator->evaluate($exercise, $dialect, $sql, $choiceIds);
@@ -82,9 +81,10 @@ class SubmitAnswer
             return [$submission, $firstSolve, $promotedTo];
         });
 
-        SubmissionEvaluated::dispatch($submission, $firstSolve, $promotedTo);
+        $event = new SubmissionEvaluated($submission, $firstSolve, $promotedTo);
+        event($event);
 
-        return $submission;
+        return new SubmissionOutcome($submission, $firstSolve, $promotedTo, $event->unlockedBadges);
     }
 
     public function xpFor(Exercise $exercise, int $hintsUsed): int

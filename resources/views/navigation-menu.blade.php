@@ -18,10 +18,18 @@
                     <x-nav-link href="{{ route('exercises.index') }}" :active="request()->routeIs('exercises.*')">
                         Exercices
                     </x-nav-link>
+                    <x-nav-link href="{{ route('leaderboard') }}" :active="request()->routeIs('leaderboard')">
+                        Classement
+                    </x-nav-link>
                 </div>
             </div>
 
             <div class="hidden sm:flex sm:items-center sm:ms-6">
+                <a href="{{ route('dashboard') }}" wire:navigate data-testid="nav-xp"
+                   class="me-4 rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-800 dark:bg-amber-400/10 dark:text-amber-300"
+                   title="{{ Auth::user()->rank?->name }}">
+                    ⭐ {{ number_format(Auth::user()->xp, 0, ',', ' ') }} XP
+                </a>
                 <!-- Teams Dropdown -->
                 @if (Laravel\Jetstream\Jetstream::hasTeamFeatures())
                     <div class="ms-3 relative">
@@ -147,6 +155,9 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link href="{{ route('exercises.index') }}" :active="request()->routeIs('exercises.*')">
                 Exercices
+            </x-responsive-nav-link>
+            <x-responsive-nav-link href="{{ route('leaderboard') }}" :active="request()->routeIs('leaderboard')">
+                Classement
             </x-responsive-nav-link>
         </div>
 

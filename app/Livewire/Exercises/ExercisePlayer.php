@@ -105,7 +105,7 @@ class ExercisePlayer extends Component
             return;
         }
 
-        $submission = $submitAnswer->handle(
+        $outcome = $submitAnswer->handle(
             user: auth()->user(),
             exercise: $this->exercise,
             dialect: $dialect ?? SqlDialect::where('is_default', true)->firstOrFail(),
@@ -114,6 +114,7 @@ class ExercisePlayer extends Component
             hintsUsed: $this->hintsRevealed,
             startedAt: $this->startedAt ? Carbon::parse($this->startedAt) : null,
         );
+        $submission = $outcome->submission;
 
         $this->result = $submission->result_preview;
         $this->verdict = $this->verdictPayload(
@@ -126,8 +127,17 @@ class ExercisePlayer extends Component
 
         unset($this->progress);
 
-        if ($submission->xp_awarded > 0) {
-            $this->dispatch('xp-gained', amount: $submission->xp_awarded, total: auth()->user()->fresh()->xp);
+        if ($submission->xp_awarded > 0 || $outcome->unlockedBadges->isNotEmpty()) {
+            $this->dispatch('xp-gained', amount: $submission->xp_awarded + $outcome->unlockedBadges->sum('xp_bonus'), total: auth()->user()->fresh()->xp);
+            $this->dispatch('refresh-navigation-menu');
+        }
+
+        foreach ($outcome->unlockedBadges as $badge) {
+            $this->dispatch('badge-unlocked', name: $badge->name, description: $badge->description, tier: $badge->tier->value, icon: $badge->icon);
+        }
+
+        if ($outcome->promotedTo) {
+            $this->dispatch('rank-up', name: $outcome->promotedTo->name);
         }
     }
 

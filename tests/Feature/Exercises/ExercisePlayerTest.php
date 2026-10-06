@@ -71,14 +71,16 @@ class ExercisePlayerTest extends TestCase
             ->call('submit')
             ->assertSet('verdict.status', 'correct')
             ->assertSet('verdict.xp', 20)
-            ->assertDispatched('xp-gained', amount: 20, total: 20)
+            // 20 XP d'exercice + 10 XP du badge « Première requête »
+            ->assertDispatched('xp-gained', amount: 30, total: 30)
+            ->assertDispatched('badge-unlocked', name: 'Première requête')
             ->call('submit')
             ->assertSet('verdict.status', 'correct')
             ->assertSet('verdict.xp', 0);
 
         $this->student->refresh();
-        $this->assertSame(20, $this->student->xp);
-        $this->assertSame(1, $this->student->xpTransactions()->count());
+        $this->assertSame(30, $this->student->xp);
+        $this->assertSame(['exercise_solved', 'badge_unlocked'], $this->student->xpTransactions()->orderBy('id')->pluck('reason')->all());
         $this->assertSame(1, $this->student->current_streak);
 
         $progress = $exercise->progress()->where('user_id', $this->student->id)->first();
