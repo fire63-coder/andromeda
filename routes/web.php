@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\ExerciseIndexController;
+use App\Livewire\Admin\Datasets\DatasetImportWizard;
+use App\Livewire\Admin\Datasets\DatasetIndex;
+use App\Livewire\Admin\Datasets\DatasetShow;
 use App\Livewire\Exercises\ExercisePlayer;
 use App\Livewire\Gamification\Leaderboard;
 use App\Livewire\Learn\Dashboard;
@@ -20,4 +23,11 @@ Route::middleware([
 
     Route::get('/exercices', ExerciseIndexController::class)->name('exercises.index');
     Route::get('/exercices/{exercise:slug}', ExercisePlayer::class)->name('exercises.show');
+
+    // Back-office : administrateurs et formateurs.
+    Route::middleware('role:admin,trainer')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/datasets', DatasetIndex::class)->name('datasets.index');
+        Route::get('/datasets/importer', DatasetImportWizard::class)->name('datasets.import');
+        Route::get('/datasets/{dataset:slug}', DatasetShow::class)->name('datasets.show');
+    });
 });
