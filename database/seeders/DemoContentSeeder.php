@@ -41,9 +41,10 @@ class DemoContentSeeder extends Seeder
         $basics = $this->lesson($beginner, 'fondamentaux-du-sql', 'Fondamentaux du SQL', 'interroger-une-table', 'Interroger une table', 'filtrer-et-trier', 'Filtrer et trier', $boutique, <<<'MD'
             # Filtrer et trier
 
-            `WHERE` ne garde que les lignes qui respectent une condition, `ORDER BY` les trie :
+            `WHERE` ne garde que les lignes qui respectent une condition, `ORDER BY` les trie.
+            Modifiez la requête ci-dessous puis exécutez-la (`Ctrl` + `Entrée`) :
 
-            ```sql
+            ```sql runnable
             SELECT name, price
             FROM products
             WHERE category = 'Livres'
@@ -51,21 +52,41 @@ class DemoContentSeeder extends Seeder
             ```
 
             Sans `ORDER BY`, **l'ordre des lignes n'est jamais garanti**, quel que soit le moteur.
+
+            Les conditions se combinent avec `AND` / `OR`, et `IN` teste une liste de valeurs :
+
+            ```sql runnable
+            SELECT name, city
+            FROM customers
+            WHERE city IN ('Lyon', 'Paris') AND created_at >= '2024-02-01'
+            ORDER BY city, name;
+            ```
+
             MD);
 
         $joins = $this->lesson($intermediate, 'requetes-intermediaires', 'Requêtes intermédiaires', 'jointures-et-agregats', 'Jointures et agrégats', 'grouper-et-filtrer-les-groupes', 'Grouper et filtrer les groupes', $boutique, <<<'MD'
             # Grouper et filtrer les groupes
 
+            Les commandes, leurs lignes et les produits sont reliés par des clés étrangères :
+
+            ```mermaid
+            erDiagram
+                customers ||--o{ orders : passe
+                orders ||--o{ order_items : contient
+                products ||--o{ order_items : figure
+            ```
+
             `GROUP BY` regroupe les lignes, les fonctions d'agrégat (`COUNT`, `SUM`, `AVG`...) les résument.
             Pour filtrer **les groupes**, on utilise `HAVING` (évalué après le regroupement), et non `WHERE`
-            (évalué avant).
+            (évalué avant) :
 
-            ```sql
-            SELECT category, AVG(price) AS prix_moyen
+            ```sql runnable
+            SELECT category, COUNT(*) AS nb, AVG(price) AS prix_moyen
             FROM products
             GROUP BY category
             HAVING AVG(price) > 30;
             ```
+
             MD);
 
         $this->exercise($basics, $beginner, [$boutique, $hidden], ['select', 'sorting'], [
@@ -293,6 +314,9 @@ class DemoContentSeeder extends Seeder
         $course = Course::updateOrCreate(['slug' => $courseSlug], [
             'level_id' => $level->id,
             'title' => $courseTitle,
+            'summary' => $level->position === 1
+                ? 'Interroger une table : sélectionner, filtrer, trier.'
+                : 'Relier les tables, regrouper et résumer les données.',
             'status' => ContentStatus::Published,
             'published_at' => now(),
         ]);

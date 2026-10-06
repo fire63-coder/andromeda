@@ -3,11 +3,20 @@
  *
  *   <div x-data="sqlEditor({ doc, mode, schema })" wire:ignore>...<div x-ref="editor"></div></div>
  *
- * - chaque frappe met à jour $wire.sql localement (sans requête réseau) ;
- * - Ctrl/Cmd + Entrée appelle run(), Ctrl/Cmd + Maj + Entrée appelle submit() ;
- * - le serveur pilote l'éditeur via les événements « sql-editor:replace » et « sql-editor:mode ».
+ * - chaque frappe met à jour la propriété Livewire `model` (« sql » par défaut) localement, sans requête ;
+ * - Ctrl/Cmd + Entrée appelle `run`, Ctrl/Cmd + Maj + Entrée appelle `submit` (méthode + arguments) ;
+ * - le serveur pilote l'éditeur via « sql-editor:replace » et « sql-editor:mode » (ciblés par `model`).
+ *
+ * Plusieurs éditeurs peuvent cohabiter (blocs SQL d'une leçon) : chacun a son `model`, ex. « snippets.2 ».
  */
-export default function sqlEditor({ doc = '', mode = 'sqlite', schema = {} } = {}) {
+export default function sqlEditor({
+    doc = '',
+    mode = 'sqlite',
+    schema = {},
+    model = 'sql',
+    run = ['run'],
+    submit = ['submit'],
+} = {}) {
     let editor = null;
 
     return {
@@ -21,21 +30,30 @@ export default function sqlEditor({ doc = '', mode = 'sqlite', schema = {} } = {
                 doc,
                 mode,
                 schema,
-                onChange: (value) => this.$wire.$set('sql', value, false),
-                onRun: () => this.call('run'),
-                onSubmit: () => this.call('submit'),
+                onChange: (value) => this.$wire.$set(model, value, false),
+                onRun: () => this.call(run),
+                onSubmit: () => this.call(submit),
             });
 
             this.ready = true;
         },
 
-        call(method) {
-            this.$wire.$set('sql', editor.value(), false);
-            this.$wire[method]();
+        call(action) {
+            if (!action) {
+                return;
+            }
+
+            const [method, ...args] = action;
+            this.$wire.$set(model, editor.value(), false);
+            this.$wire[method](...args);
         },
 
-        replace(text) {
-            editor?.replace(text);
+        replace(detail) {
+            if ((detail.model ?? 'sql') !== model) {
+                return;
+            }
+
+            editor?.replace(detail.sql);
             editor?.focus();
         },
 

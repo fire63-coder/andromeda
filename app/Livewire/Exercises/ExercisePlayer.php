@@ -7,6 +7,7 @@ use App\Contracts\ExerciseContext;
 use App\Enums\ExerciseType;
 use App\Enums\SubmissionStatus;
 use App\Exceptions\ContextClosed;
+use App\Livewire\Concerns\ThrottlesSandbox;
 use App\Models\CertificationAttempt;
 use App\Models\ChallengeParticipation;
 use App\Models\Exercise;
@@ -18,7 +19,6 @@ use App\Services\Evaluation\SubmissionEvaluator;
 use App\Services\Sandbox\QueryResult;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -35,6 +35,8 @@ use Livewire\Component;
 #[Title('Exercice')]
 class ExercisePlayer extends Component
 {
+    use ThrottlesSandbox;
+
     /** Taille maximale d'aperçu renvoyée au navigateur. */
     private const PREVIEW_ROWS = 100;
 
@@ -417,17 +419,12 @@ class ExercisePlayer extends Component
 
     private function throttle(): bool
     {
-        $key = 'sandbox:'.auth()->id();
-
-        if (RateLimiter::tooManyAttempts($key, (int) config('sandbox.rate_limit_per_minute'))) {
-            $seconds = RateLimiter::availableIn($key);
-            $this->result = QueryResult::failure("Trop d'exécutions rapprochées : réessayez dans {$seconds} s.", QueryResult::ERROR_REJECTED)->toPreview();
+        if ($message = $this->sandboxThrottled()) {
+            $this->result = QueryResult::failure($message, QueryResult::ERROR_REJECTED)->toPreview();
             $this->verdict = null;
 
             return false;
         }
-
-        RateLimiter::hit($key, 60);
 
         return true;
     }

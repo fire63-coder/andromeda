@@ -131,7 +131,7 @@
 
                     <div wire:ignore
                          x-data="sqlEditor({ doc: @js($sql), mode: @js($this->currentDialect()?->editor_mode ?? 'sqlite'), schema: @js($this->completionSchema) })"
-                         x-on:sql-editor:replace.window="replace($event.detail.sql)"
+                         x-on:sql-editor:replace.window="replace($event.detail)"
                          x-on:sql-editor:mode.window="setMode($event.detail.mode)"
                          class="relative h-72">
                         <div x-ref="editor" class="h-full" data-testid="sql-editor"></div>
