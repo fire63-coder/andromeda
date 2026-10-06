@@ -16,6 +16,17 @@ class Lesson extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * Valeurs par défaut en mémoire, identiques aux défauts SQL.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'xp_reward' => 10,
+        'position' => 0,
+        'status' => 'draft',
+    ];
+
     protected $fillable = [
         'chapter_id', 'dataset_id', 'title', 'slug', 'content_markdown', 'content_html',
         'schema_diagram', 'estimated_minutes', 'xp_reward', 'position', 'status', 'published_at',

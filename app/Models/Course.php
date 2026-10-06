@@ -17,6 +17,16 @@ class Course extends Model
     use HasFactory;
     use SoftDeletes;
 
+    /**
+     * Valeurs par défaut en mémoire, identiques aux défauts SQL.
+     *
+     * @var array<string, mixed>
+     */
+    protected $attributes = [
+        'position' => 0,
+        'status' => 'draft',
+    ];
+
     protected $fillable = [
         'level_id', 'sql_dialect_id', 'author_id', 'title', 'slug', 'summary', 'description',
         'cover_image_path', 'estimated_minutes', 'position', 'status', 'published_at',

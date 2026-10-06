@@ -42,7 +42,7 @@
                 <details class="mt-3 text-sm">
                     <summary class="cursor-pointer text-indigo-600 dark:text-indigo-400">Schéma relationnel du chapitre</summary>
                     <div x-data="mermaidDiagram(@js($row['chapter']->schema_diagram))" class="mt-3 overflow-x-auto">
-                        <div x-ref="target"></div>
+                        <div x-ref="target" wire:ignore></div>
                         <p x-show="error" x-text="error" class="text-rose-600"></p>
                     </div>
                 </details>

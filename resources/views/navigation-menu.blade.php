@@ -31,7 +31,7 @@
                         Classement
                     </x-nav-link>
                     @if (Auth::user()->canAuthorContent())
-                        <x-nav-link href="{{ route('admin.datasets.index') }}" :active="request()->routeIs('admin.*')">
+                        <x-nav-link href="{{ route('admin.courses.index') }}" :active="request()->routeIs('admin.*')">
                             Administration
                         </x-nav-link>
                     @endif
@@ -183,7 +183,7 @@
                 Classement
             </x-responsive-nav-link>
             @if (Auth::user()->canAuthorContent())
-                <x-responsive-nav-link href="{{ route('admin.datasets.index') }}" :active="request()->routeIs('admin.*')">
+                <x-responsive-nav-link href="{{ route('admin.courses.index') }}" :active="request()->routeIs('admin.*')">
                     Administration
                 </x-responsive-nav-link>
             @endif

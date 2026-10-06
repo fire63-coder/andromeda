@@ -3,7 +3,9 @@
 @endphp
 
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-    <div class="flex flex-wrap items-center justify-between gap-4">
+    @include('livewire.admin.partials.tabs')
+
+    <div class="mt-6 flex flex-wrap items-center justify-between gap-4">
         <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Jeux de données</h1>
         <div class="flex gap-3">
             <input type="search" wire:model.live.debounce.300ms="search" placeholder="Rechercher…"

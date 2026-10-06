@@ -2,6 +2,9 @@
 
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ExerciseIndexController;
+use App\Livewire\Admin\Courses\CourseEditor;
+use App\Livewire\Admin\Courses\CourseIndex;
+use App\Livewire\Admin\Courses\LessonEditor;
 use App\Livewire\Admin\Datasets\DatasetImportWizard;
 use App\Livewire\Admin\Datasets\DatasetIndex;
 use App\Livewire\Admin\Datasets\DatasetShow;
@@ -34,7 +37,8 @@ Route::middleware([
 
     Route::get('/cours', CourseCatalog::class)->name('courses.index');
     Route::get('/cours/{course:slug}', CourseShow::class)->name('courses.show');
-    Route::get('/cours/{course:slug}/{lesson:slug}', LessonViewer::class)->name('lessons.show');
+    // Liaison limitée au cours : deux cours peuvent avoir une leçon de même identifiant.
+    Route::get('/cours/{course:slug}/{lesson:slug}', LessonViewer::class)->name('lessons.show')->scopeBindings();
 
     Route::get('/exercices', ExerciseIndexController::class)->name('exercises.index');
     Route::get('/exercices/{exercise:slug}', ExercisePlayer::class)->name('exercises.show');
@@ -47,6 +51,11 @@ Route::middleware([
 
     // Back-office : administrateurs et formateurs.
     Route::middleware('role:admin,trainer')->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/cours', CourseIndex::class)->name('courses.index');
+        Route::get('/cours/creer', CourseEditor::class)->name('courses.create');
+        Route::get('/cours/{course:slug}', CourseEditor::class)->name('courses.edit');
+        Route::get('/lecons/{lesson}', LessonEditor::class)->name('lessons.edit');
+
         Route::get('/datasets', DatasetIndex::class)->name('datasets.index');
         Route::get('/datasets/importer', DatasetImportWizard::class)->name('datasets.import');
         Route::get('/datasets/{dataset:slug}', DatasetShow::class)->name('datasets.show');

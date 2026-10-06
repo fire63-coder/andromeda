@@ -29,7 +29,7 @@
                     <div class="prose max-w-none dark:prose-invert prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900">{!! $segment['html'] !!}</div>
                 @elseif ($segment['type'] === 'mermaid')
                     <figure x-data="mermaidDiagram(@js($segment['source']))" class="overflow-x-auto rounded-lg bg-gray-50 p-4 dark:bg-gray-900/50">
-                        <div x-ref="target"></div>
+                        <div x-ref="target" wire:ignore></div>
                         <p x-show="error" x-text="error" class="text-sm text-rose-600"></p>
                     </figure>
                 @else
