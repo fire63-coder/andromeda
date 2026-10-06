@@ -15,13 +15,19 @@ class UserSubmission extends Model
         'result_preview', 'feedback', 'error_message', 'hints_used', 'xp_awarded',
     ];
 
-    protected $casts = [
-        'status' => SubmissionStatus::class,
-        'is_correct' => 'boolean',
-        'selected_choice_ids' => 'array',
-        'result_preview' => 'array',
-        'feedback' => 'array',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => SubmissionStatus::class,
+            'is_correct' => 'boolean',
+            'selected_choice_ids' => 'array',
+            'result_preview' => 'array',
+            'feedback' => 'array',
+        ];
+    }
 
     public function user(): BelongsTo
     {

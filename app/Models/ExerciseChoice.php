@@ -11,9 +11,15 @@ class ExerciseChoice extends Model
 
     protected $hidden = ['is_correct', 'explanation'];
 
-    protected $casts = [
-        'is_correct' => 'boolean',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'is_correct' => 'boolean',
+        ];
+    }
 
     public function exercise(): BelongsTo
     {

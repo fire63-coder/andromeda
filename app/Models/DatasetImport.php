@@ -14,14 +14,20 @@ class DatasetImport extends Model
         'options', 'status', 'rows_imported', 'errors', 'started_at', 'finished_at',
     ];
 
-    protected $casts = [
-        'format' => DatasetFormat::class,
-        'status' => DatasetStatus::class,
-        'options' => 'array',
-        'errors' => 'array',
-        'started_at' => 'datetime',
-        'finished_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'format' => DatasetFormat::class,
+            'status' => DatasetStatus::class,
+            'options' => 'array',
+            'errors' => 'array',
+            'started_at' => 'datetime',
+            'finished_at' => 'datetime',
+        ];
+    }
 
     public function dataset(): BelongsTo
     {

@@ -22,10 +22,16 @@ class Course extends Model
         'cover_image_path', 'estimated_minutes', 'position', 'status', 'published_at',
     ];
 
-    protected $casts = [
-        'status' => ContentStatus::class,
-        'published_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => ContentStatus::class,
+            'published_at' => 'datetime',
+        ];
+    }
 
     public function level(): BelongsTo
     {

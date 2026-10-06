@@ -16,12 +16,18 @@ class UserProgress extends Model
         'attempts_count', 'best_score', 'started_at', 'completed_at', 'last_activity_at',
     ];
 
-    protected $casts = [
-        'status' => ProgressStatus::class,
-        'started_at' => 'datetime',
-        'completed_at' => 'datetime',
-        'last_activity_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => ProgressStatus::class,
+            'started_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'last_activity_at' => 'datetime',
+        ];
+    }
 
     public function user(): BelongsTo
     {

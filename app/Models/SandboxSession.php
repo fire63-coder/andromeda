@@ -14,11 +14,17 @@ class SandboxSession extends Model
         'status', 'queries_count', 'last_used_at', 'expires_at',
     ];
 
-    protected $casts = [
-        'status' => SandboxStatus::class,
-        'last_used_at' => 'datetime',
-        'expires_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => SandboxStatus::class,
+            'last_used_at' => 'datetime',
+            'expires_at' => 'datetime',
+        ];
+    }
 
     public function user(): BelongsTo
     {

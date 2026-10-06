@@ -16,10 +16,16 @@ class SqlDialect extends Model
         'is_sandbox_enabled', 'is_default', 'position',
     ];
 
-    protected $casts = [
-        'is_sandbox_enabled' => 'boolean',
-        'is_default' => 'boolean',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'is_sandbox_enabled' => 'boolean',
+            'is_default' => 'boolean',
+        ];
+    }
 
     public function courses(): HasMany
     {

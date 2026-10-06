@@ -33,16 +33,22 @@ class Exercise extends Model
      */
     protected $hidden = ['solution_sql', 'expected_result'];
 
-    protected $casts = [
-        'type' => ExerciseType::class,
-        'validation_strategy' => ValidationStrategy::class,
-        'status' => ContentStatus::class,
-        'expected_result' => 'array',
-        'validation_options' => 'array',
-        'hints' => 'array',
-        'reviewed_at' => 'datetime',
-        'published_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'type' => ExerciseType::class,
+            'validation_strategy' => ValidationStrategy::class,
+            'status' => ContentStatus::class,
+            'expected_result' => 'array',
+            'validation_options' => 'array',
+            'hints' => 'array',
+            'reviewed_at' => 'datetime',
+            'published_at' => 'datetime',
+        ];
+    }
 
     public function lesson(): BelongsTo
     {

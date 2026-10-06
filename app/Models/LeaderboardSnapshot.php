@@ -9,9 +9,15 @@ class LeaderboardSnapshot extends Model
 {
     protected $fillable = ['period', 'period_start', 'organization_id', 'user_id', 'xp', 'position'];
 
-    protected $casts = [
-        'period_start' => 'date',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'period_start' => 'date',
+        ];
+    }
 
     public function user(): BelongsTo
     {

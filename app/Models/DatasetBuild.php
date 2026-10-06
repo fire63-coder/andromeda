@@ -13,10 +13,16 @@ class DatasetBuild extends Model
         'status', 'error_message', 'built_at',
     ];
 
-    protected $casts = [
-        'status' => DatasetStatus::class,
-        'built_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => DatasetStatus::class,
+            'built_at' => 'datetime',
+        ];
+    }
 
     public function dataset(): BelongsTo
     {

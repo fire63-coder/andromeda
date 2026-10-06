@@ -20,13 +20,19 @@ class Challenge extends Model
         'duration_seconds', 'xp_multiplier', 'status', 'created_by',
     ];
 
-    protected $casts = [
-        'type' => ChallengeType::class,
-        'status' => ContentStatus::class,
-        'starts_at' => 'datetime',
-        'ends_at' => 'datetime',
-        'xp_multiplier' => 'decimal:2',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'type' => ChallengeType::class,
+            'status' => ContentStatus::class,
+            'starts_at' => 'datetime',
+            'ends_at' => 'datetime',
+            'xp_multiplier' => 'decimal:2',
+        ];
+    }
 
     public function organization(): BelongsTo
     {

@@ -12,9 +12,15 @@ class XpTransaction extends Model
 
     protected $fillable = ['user_id', 'amount', 'reason', 'source_type', 'source_id', 'meta'];
 
-    protected $casts = [
-        'meta' => 'array',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'meta' => 'array',
+        ];
+    }
 
     public function user(): BelongsTo
     {

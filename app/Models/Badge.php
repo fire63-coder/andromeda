@@ -16,12 +16,18 @@ class Badge extends Model
         'xp_bonus', 'is_secret', 'is_active', 'position',
     ];
 
-    protected $casts = [
-        'tier' => BadgeTier::class,
-        'criteria' => 'array',
-        'is_secret' => 'boolean',
-        'is_active' => 'boolean',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'tier' => BadgeTier::class,
+            'criteria' => 'array',
+            'is_secret' => 'boolean',
+            'is_active' => 'boolean',
+        ];
+    }
 
     public function users(): BelongsToMany
     {

@@ -22,12 +22,18 @@ class Dataset extends Model
         'status', 'is_public', 'created_by',
     ];
 
-    protected $casts = [
-        'source_format' => DatasetFormat::class,
-        'status' => DatasetStatus::class,
-        'tables_meta' => 'array',
-        'is_public' => 'boolean',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'source_format' => DatasetFormat::class,
+            'status' => DatasetStatus::class,
+            'tables_meta' => 'array',
+            'is_public' => 'boolean',
+        ];
+    }
 
     public function sourceDialect(): BelongsTo
     {

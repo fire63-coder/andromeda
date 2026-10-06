@@ -13,10 +13,16 @@ class ChallengeParticipation extends Model
         'final_rank', 'started_at', 'finished_at',
     ];
 
-    protected $casts = [
-        'started_at' => 'datetime',
-        'finished_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'started_at' => 'datetime',
+            'finished_at' => 'datetime',
+        ];
+    }
 
     public function challenge(): BelongsTo
     {

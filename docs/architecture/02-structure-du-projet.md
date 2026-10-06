@@ -146,8 +146,16 @@ MSSQL, PL/SQL et SQLite, et s'intègre proprement via `wire:ignore` + `$wire.ent
 
 ## Version de la stack
 
-Le dépôt est actuellement sur **Laravel 10 / Jetstream 3 / Livewire 2**. Les dernières versions stables
-sont **Laravel 13** et **Livewire 4**. L'arborescence ci-dessus vise Livewire 3+/4 (`app/Livewire`,
-composants en classe — toujours supportés en v4 et préférables ici pour la testabilité de la logique d'évaluation).
-Les migrations et modèles livrés sont compatibles avec Laravel 10 → 13 ; la montée de version est à faire
-avant d'écrire les premiers composants (voir le message de synthèse).
+| Composant | Version |
+|---|---|
+| PHP | 8.3+ |
+| Laravel | 13.x (structure allégée : `bootstrap/app.php`, `bootstrap/providers.php`, plus de Kernels) |
+| Livewire | 4.x — composants en classe dans `app/Livewire` (préférables ici pour tester la logique d'évaluation) |
+| Jetstream | 5.x (stack Livewire) + Fortify — authentification, 2FA, profil, suppression de compte |
+| Sanctum | 4.x |
+| PHPUnit | 12.x |
+| Front | Vite 8, laravel-vite-plugin 3, Tailwind CSS 3.4 (vues Jetstream) |
+
+Alpine.js est fourni par Livewire : `resources/js/app.js` ne doit pas le réimporter.
+Les files d'attente et le cache utilisent la base de données (`QUEUE_CONNECTION=database`,
+`CACHE_STORE=database`) : lancer `composer dev` démarre serveur, worker de file et Vite ensemble.

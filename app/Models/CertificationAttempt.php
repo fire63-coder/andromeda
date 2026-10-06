@@ -14,14 +14,20 @@ class CertificationAttempt extends Model
         'started_at', 'expires_at', 'completed_at', 'certificate_code', 'issued_at',
     ];
 
-    protected $casts = [
-        'status' => AttemptStatus::class,
-        'exercise_ids' => 'array',
-        'started_at' => 'datetime',
-        'expires_at' => 'datetime',
-        'completed_at' => 'datetime',
-        'issued_at' => 'datetime',
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => AttemptStatus::class,
+            'exercise_ids' => 'array',
+            'started_at' => 'datetime',
+            'expires_at' => 'datetime',
+            'completed_at' => 'datetime',
+            'issued_at' => 'datetime',
+        ];
+    }
 
     public function certification(): BelongsTo
     {

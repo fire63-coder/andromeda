@@ -20,9 +20,15 @@ class Certification extends Model
         'duration_minutes', 'exercises_count', 'max_attempts', 'cooldown_hours', 'xp_reward', 'status',
     ];
 
-    protected $casts = [
-        'status' => ContentStatus::class,
-    ];
+    /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'status' => ContentStatus::class,
+        ];
+    }
 
     public function level(): BelongsTo
     {
