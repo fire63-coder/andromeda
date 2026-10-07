@@ -342,6 +342,10 @@ class PostgresDriver implements SandboxDriver
 
     private function connect(string $username, string $password): PDO
     {
+        if (! extension_loaded('pdo_pgsql')) {
+            throw new SandboxUnavailable('L\'extension PHP pdo_pgsql n\'est pas activée : décommentez « extension=pdo_pgsql » dans le php.ini (voir « php --ini »), puis relancez PHP.');
+        }
+
         try {
             return new PDO(
                 $this->dsn(),

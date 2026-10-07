@@ -308,6 +308,10 @@ class MysqlDriver implements SandboxDriver
 
     private function connect(string $username, string $password, ?string $database = null): mysqli
     {
+        if (! extension_loaded('mysqli')) {
+            throw new SandboxUnavailable('L\'extension PHP mysqli n\'est pas activée : décommentez « extension=mysqli » dans le php.ini (voir « php --ini »), puis relancez PHP.');
+        }
+
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
         try {
