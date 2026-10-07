@@ -34,6 +34,11 @@ interface SandboxDriver
     public function supportsDdl(): bool;
 
     /**
+     * Le moteur accepte-t-il les fonctions et procédures stockées (StatementKind::Routine) ?
+     */
+    public function supportsRoutines(): bool;
+
+    /**
      * Supprime la ressource matérialisée du build.
      */
     public function destroy(DatasetBuild $build): void;

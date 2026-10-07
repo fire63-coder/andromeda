@@ -12,6 +12,7 @@ use App\Services\Sandbox\StatementKind;
 use PDO;
 use PDOException;
 use PDOStatement;
+use Symfony\Component\Process\Process;
 
 /**
  * Un schéma PostgreSQL par build de jeu de données, sur un serveur dédié.
@@ -93,6 +94,7 @@ class PostgresDriver implements SandboxDriver
 
         $result = ['columns' => [], 'rows' => [], 'truncated' => false, 'affected_rows' => null];
         $checks = [];
+        $watchdog = $query->has(StatementKind::Routine) ? $this->startWatchdog($pdo, $timeoutMs) : null;
 
         try {
             $pdo->exec('BEGIN');
@@ -124,12 +126,21 @@ class PostgresDriver implements SandboxDriver
                 $checks[$name] = ['columns' => $fetched['columns'], 'rows' => $fetched['rows']];
             }
         } catch (PDOException $e) {
+            $sqlState = (string) ($e->errorInfo[0] ?? $e->getCode());
+            $connectionLost = $sqlState === '57P01' || str_starts_with($sqlState, '08') || str_contains($e->getMessage(), 'server closed the connection');
+
+            if ($this->stopWatchdog($watchdog, $connectionLost)) {
+                return QueryResult::failure("La requête a dépassé le temps limite de {$timeoutMs} ms.", QueryResult::ERROR_TIMEOUT, $elapsed());
+            }
+
             return $this->failure($e, $timeoutMs, $elapsed());
         } finally {
+            $this->stopWatchdog($watchdog);
+
             try {
                 $pdo->exec('ROLLBACK');
             } catch (PDOException) {
-                // Connexion déjà perdue : rien à annuler.
+                // Connexion déjà perdue (ou coupée par le chien de garde) : PostgreSQL a tout annulé.
             }
         }
 
@@ -147,6 +158,61 @@ class PostgresDriver implements SandboxDriver
     public function supportsDdl(): bool
     {
         return true; // DDL transactionnel.
+    }
+
+    public function supportsRoutines(): bool
+    {
+        return true; // PL/pgSQL et SQL, sous surveillance du chien de garde.
+    }
+
+    /**
+     * Le code stocké peut intercepter l'annulation de statement_timeout : un processus séparé
+     * coupera la connexion (pg_terminate_backend) si elle dépasse le délai d'une seconde.
+     */
+    private function startWatchdog(PDO $pdo, int $timeoutMs): Process
+    {
+        // Identifiants transmis par l'environnement (lisible par le seul utilisateur système),
+        // jamais en argument (visible dans ps). Pas par stdin : Symfony ne l'écrit qu'au fil des
+        // appels à Process, or le parent reste bloqué dans PDO pendant toute la requête.
+        $process = new Process([
+            $this->config['php_binary'] ?? PHP_BINARY,
+            '-d', 'display_errors=stderr',
+            __DIR__.'/../Runners/pg-watchdog.php',
+        ], env: ['SANDBOX_WATCHDOG' => json_encode([
+            'dsn' => $this->dsn(),
+            'username' => $this->config['owner_username'],
+            'password' => $this->config['owner_password'],
+            'pid' => (int) $pdo->query('SELECT pg_backend_pid()')->fetchColumn(),
+            'delay_ms' => $timeoutMs + 1000,
+        ])]);
+        $process->setTimeout(null);
+        $process->start();
+
+        return $process;
+    }
+
+    /**
+     * Arrête le chien de garde. Retourne vrai s'il a dû couper la connexion.
+     */
+    private function stopWatchdog(?Process $watchdog, bool $connectionLost = false): bool
+    {
+        if (! $watchdog) {
+            return false;
+        }
+
+        // Connexion coupée : laisse au chien de garde le temps de confirmer que c'est lui.
+        $deadline = microtime(true) + ($connectionLost ? 1.0 : 0);
+        while ($watchdog->isRunning() && microtime(true) < $deadline && ! str_contains($watchdog->getOutput(), 'terminated')) {
+            usleep(10_000);
+        }
+
+        $terminated = str_contains($watchdog->getOutput(), 'terminated');
+
+        if ($watchdog->isRunning()) {
+            $watchdog->stop(0);
+        }
+
+        return $terminated;
     }
 
     public function destroy(DatasetBuild $build): void
@@ -184,6 +250,15 @@ class PostgresDriver implements SandboxDriver
         $pdo->exec('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
         // Empêche de lever statement_timeout via SELECT set_config(...), y compris en SQL dynamique.
         $pdo->exec('REVOKE EXECUTE ON FUNCTION set_config(text, text, boolean) FROM PUBLIC');
+        // Un compte non privilégié peut annuler ou couper les connexions de son propre rôle :
+        // l'exécution partagée par tous les élèves ne doit pas pouvoir couper celles des autres.
+        foreach (['pg_cancel_backend(integer)', 'pg_terminate_backend(integer, bigint)'] as $function) {
+            $pdo->exec("REVOKE EXECUTE ON FUNCTION {$function} FROM PUBLIC");
+        }
+        // Le chien de garde coupe les connexions d'exécution trop longues : le compte propriétaire
+        // (NOINHERIT) endosse explicitement le rôle pg_signal_backend (SET ROLE) le temps de le faire.
+        $pdo->exec('GRANT EXECUTE ON FUNCTION pg_terminate_backend(integer, bigint) TO pg_signal_backend');
+        $pdo->exec('GRANT pg_signal_backend TO '.$owner);
     }
 
     private function upsertRole(PDO $pdo, string $name, string $password): void
@@ -269,7 +344,7 @@ class PostgresDriver implements SandboxDriver
     {
         try {
             return new PDO(
-                "pgsql:host={$this->config['host']};port={$this->config['port']};dbname={$this->config['database']};connect_timeout=3",
+                $this->dsn(),
                 $username,
                 $password,
                 [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION],
@@ -277,6 +352,11 @@ class PostgresDriver implements SandboxDriver
         } catch (PDOException $e) {
             throw new SandboxUnavailable('Le serveur PostgreSQL du bac à sable est injoignable.', previous: $e);
         }
+    }
+
+    private function dsn(): string
+    {
+        return "pgsql:host={$this->config['host']};port={$this->config['port']};dbname={$this->config['database']};connect_timeout=3";
     }
 
     private function quoteIdentifier(string $identifier): string

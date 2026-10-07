@@ -4,8 +4,10 @@ namespace Tests\Feature\Sandbox;
 
 use App\Models\Dataset;
 use App\Models\SqlDialect;
+use App\Services\Sandbox\GuardedQuery;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\StatementKind;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PDO;
 use PDOException;
@@ -86,7 +88,7 @@ class PostgresSandboxTest extends TestCase
         $config = config('sandbox.drivers.pgsql');
         $pdo = new PDO("pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']}", $config['runner_username'], $config['runner_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
-        foreach (["SELECT set_config('statement_timeout', '0', false)", 'SELECT * FROM pg_shadow', "COPY (SELECT 1) TO '/tmp/out'"] as $sql) {
+        foreach (["SELECT set_config('statement_timeout', '0', false)", 'SELECT * FROM pg_shadow', "COPY (SELECT 1) TO '/tmp/out'", 'SELECT pg_terminate_backend(pg_backend_pid())', 'SELECT pg_cancel_backend(pg_backend_pid())', 'SET ROLE pg_signal_backend'] as $sql) {
             try {
                 $pdo->query($sql);
                 $this->fail("Le compte d'exécution a pu lancer : {$sql}");
@@ -94,5 +96,43 @@ class PostgresSandboxTest extends TestCase
                 $this->assertStringContainsString('permission denied', $e->getMessage());
             }
         }
+    }
+
+    #[Test]
+    public function stored_functions_run_and_are_rolled_back(): void
+    {
+        $options = ['allowed_statements' => ['routine', 'select']];
+        $result = $this->sandbox->run($this->dataset, $this->pgsql, <<<'SQL'
+            CREATE FUNCTION ttc(prix numeric) RETURNS numeric LANGUAGE plpgsql AS $$
+            BEGIN
+                RETURN ROUND(prix * 1.2, 2);
+            END
+            $$;
+            SELECT ttc(price) FROM products WHERE id = 1;
+            SQL, $options);
+
+        $this->assertTrue($result->success, (string) $result->error);
+        $this->assertSame([['29.88']], $result->rows);
+
+        $again = $this->sandbox->run($this->dataset, $this->pgsql, 'SELECT ttc(10)', $options);
+        $this->assertStringContainsString('function ttc(integer) does not exist', (string) $again->error);
+    }
+
+    #[Test]
+    public function the_watchdog_ends_code_that_survives_the_statement_timeout(): void
+    {
+        // Contourne volontairement le QueryGuard (qui refuse query_canceled) : seul le chien de garde protège.
+        $driver = $this->sandbox->driver($this->pgsql);
+        $query = new GuardedQuery([
+            'CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS $$ BEGIN LOOP BEGIN PERFORM pg_sleep(1); EXCEPTION WHEN query_canceled THEN NULL; END; END LOOP; END $$',
+            'SELECT f()',
+        ], [StatementKind::Routine, StatementKind::Select]);
+
+        $started = microtime(true);
+        $result = $driver->execute($this->sandbox->build($this->dataset, $this->pgsql), $query, 500, 10);
+
+        $this->assertSame(QueryResult::ERROR_TIMEOUT, $result->errorType);
+        $this->assertLessThan(5, microtime(true) - $started);
+        $this->assertTrue($this->sandbox->run($this->dataset, $this->pgsql, 'SELECT 1')->success);
     }
 }

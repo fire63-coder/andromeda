@@ -80,6 +80,32 @@ class SqlLexer
         return $words;
     }
 
+    /**
+     * Identifiants délimités ("x", `x`, [x]) sans leurs délimiteurs, en majuscules,
+     * plus les mots contenus dans les crochets (indices de tableau PostgreSQL).
+     *
+     * @return list<string>
+     */
+    public function quotedIdentifiers(string $sql): array
+    {
+        $identifiers = [];
+
+        foreach ($this->tokens($sql) as [$type, $value]) {
+            if ($type !== 'quoted') {
+                continue;
+            }
+
+            $identifiers[] = strtoupper(str_replace(['""', '``'], ['"', '`'], substr($value, 1, -1)));
+
+            // En PostgreSQL, [...] est un indice de tableau : son contenu est une expression.
+            if ($value[0] === '[') {
+                array_push($identifiers, ...$this->words(substr($value, 1, -1)), ...$this->quotedIdentifiers(substr($value, 1, -1)));
+            }
+        }
+
+        return $identifiers;
+    }
+
     public function firstWord(string $statement): ?string
     {
         return $this->words($statement)[0] ?? null;

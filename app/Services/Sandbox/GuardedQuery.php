@@ -26,4 +26,9 @@ final readonly class GuardedQuery
 
         return true;
     }
+
+    public function has(StatementKind $kind): bool
+    {
+        return in_array($kind, $this->kinds, true);
+    }
 }

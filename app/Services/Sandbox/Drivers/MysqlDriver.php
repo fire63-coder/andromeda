@@ -81,6 +81,10 @@ class MysqlDriver implements SandboxDriver
         int $maxRows,
         array $checkQueries = [],
     ): QueryResult {
+        if ($query->has(StatementKind::Routine)) {
+            return QueryResult::failure('Les fonctions et procédures stockées ne sont disponibles que sur PostgreSQL.', QueryResult::ERROR_REJECTED);
+        }
+
         foreach ($query->statements as $index => $statement) {
             if ($query->kinds[$index] === StatementKind::Ddl || $this->lexer->firstWord($statement) === 'TRUNCATE') {
                 return QueryResult::failure(
@@ -141,6 +145,11 @@ class MysqlDriver implements SandboxDriver
             durationMs: $duration,
             checks: $checks,
         );
+    }
+
+    public function supportsRoutines(): bool
+    {
+        return false; // Les routines MySQL valident implicitement la transaction.
     }
 
     public function supportsDdl(): bool

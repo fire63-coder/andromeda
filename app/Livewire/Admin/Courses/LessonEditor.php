@@ -99,14 +99,15 @@ class LessonEditor extends Component
     public function checkSnippets(LessonRenderer $renderer, SandboxManager $sandbox): void
     {
         $dataset = Dataset::find($this->datasetId);
-        $dialect = SqlDialect::where('is_default', true)->first();
+        // Le moteur du cours s'il en impose un (ex. PostgreSQL pour PL/pgSQL), sinon le moteur par défaut.
+        $dialect = $this->lesson->chapter->course->dialect ?? SqlDialect::where('is_default', true)->first();
 
         $this->checks = collect($renderer->snippets($this->content))->map(function (string $sql, int $index) use ($dataset, $dialect, $sandbox) {
             if (! $dataset || ! $dialect) {
                 return ['index' => $index, 'sql' => $sql, 'ok' => false, 'message' => 'Choisissez un jeu de données pour exécuter les exemples.'];
             }
 
-            $result = $sandbox->run($dataset, $dialect, $sql, ['allowed_statements' => ['select', 'dml'], 'max_statements' => 5]);
+            $result = $sandbox->run($dataset, $dialect, $sql, LessonRenderer::SNIPPET_GUARD);
 
             return [
                 'index' => $index,

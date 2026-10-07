@@ -140,4 +140,96 @@ class QueryGuardTest extends TestCase
         $this->expectException(QueryRejected::class);
         $this->guard->inspectScript("CREATE TABLE t (x INT); ATTACH DATABASE '/var/www/public/x.php' AS evil;");
     }
+
+    private const ROUTINES = ['allowed_statements' => ['routine', 'select', 'ddl']];
+
+    #[Test]
+    public function it_classifies_functions_procedures_and_calls_as_routines(): void
+    {
+        $query = $this->guard->inspect(<<<'SQL'
+            CREATE OR REPLACE FUNCTION ttc(p numeric) RETURNS numeric LANGUAGE plpgsql AS $$
+            DECLARE
+                taux numeric := 1.2;
+            BEGIN
+                UPDATE products SET price = price WHERE id = 0;
+                IF p IS NULL THEN
+                    RETURN NULL;
+                END IF;
+                RETURN ROUND(p * taux, 2);
+            END
+            $$;
+            CREATE TRIGGER t AFTER UPDATE OF price ON products FOR EACH ROW EXECUTE FUNCTION ttc();
+            CALL augmenter(2, 5);
+            DROP FUNCTION ttc(numeric);
+            SQL, self::ROUTINES);
+
+        $this->assertSame([StatementKind::Routine, StatementKind::Ddl, StatementKind::Routine, StatementKind::Routine], $query->kinds);
+    }
+
+    #[Test]
+    public function routines_need_to_be_allowed_by_the_exercise(): void
+    {
+        $this->expectExceptionMessage("n'accepte que les modifications de structure");
+
+        $this->guard->inspect('CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$', ['allowed_statements' => ['ddl']]);
+    }
+
+    #[Test]
+    public function required_keywords_are_searched_in_routine_bodies(): void
+    {
+        $sql = 'CREATE FUNCTION f(x int) RETURNS int LANGUAGE plpgsql AS $$ BEGIN IF x > 0 THEN RETURN 1; END IF; RETURN 0; END $$';
+
+        $this->guard->inspect($sql, [...self::ROUTINES, 'required_keywords' => ['IF']]);
+
+        $this->expectExceptionMessage('impose');
+        $this->guard->inspect($sql, [...self::ROUTINES, 'required_keywords' => ['LOOP']]);
+    }
+
+    /**
+     * @return array<string, array{0: string}>
+     */
+    public static function dangerousRoutines(): array
+    {
+        $body = fn (string $code) => "CREATE FUNCTION f() RETURNS int LANGUAGE plpgsql AS \$\$ BEGIN {$code} RETURN 1; END \$\$";
+
+        return [
+            'SET dans le corps' => [$body('SET statement_timeout = 0;')],
+            'SET LOCAL après THEN' => [$body('IF true THEN SET LOCAL statement_timeout = 0; END IF;')],
+            'RESET' => [$body('RESET ALL;')],
+            'COMMIT' => [$body('COMMIT;')],
+            'SQL dynamique' => [$body("EXECUTE 'SELECT 1';")],
+            'RETURN QUERY EXECUTE' => ["CREATE FUNCTION f() RETURNS SETOF int LANGUAGE plpgsql AS \$\$ BEGIN RETURN QUERY EXECUTE 'SELECT 1'; END \$\$"],
+            'interception du timeout' => [$body('BEGIN PERFORM 1; EXCEPTION WHEN query_canceled THEN NULL; END;')],
+            'interception par SQLSTATE' => [$body("BEGIN PERFORM 1; EXCEPTION WHEN SQLSTATE '57014' THEN NULL; END;")],
+            'mot interdit dans le corps' => [$body('PERFORM pg_terminate_backend(1);')],
+            'identifiant délimité' => [$body('PERFORM "pg_terminate_backend"(1);')],
+            'indice de tableau' => [$body('PERFORM (ARRAY[1])[pg_terminate_backend(1)::int];')],
+            'fonction imbriquée' => [$body('CREATE FUNCTION g() RETURNS int LANGUAGE sql AS $g$ SELECT 1 $g$;')],
+            'clause SET' => ['CREATE FUNCTION f() RETURNS int LANGUAGE sql SET statement_timeout = 0 AS $$ SELECT 1 $$'],
+            'langage non fiable' => ['CREATE FUNCTION f() RETURNS int LANGUAGE plpython3u AS $$ return 1 $$'],
+            'langage entre apostrophes' => ["CREATE FUNCTION f() RETURNS int LANGUAGE 'plpgsql' AS \$\$ BEGIN RETURN 1; END \$\$"],
+            'corps entre apostrophes' => ["CREATE FUNCTION f() RETURNS int LANGUAGE sql AS 'SELECT pg_terminate_backend(1)'"],
+            'BEGIN ATOMIC' => ['CREATE FUNCTION f() RETURNS int LANGUAGE sql BEGIN ATOMIC SELECT 1; END'],
+            'ALTER FUNCTION' => ['ALTER FUNCTION f() SET statement_timeout = 0'],
+            'bloc anonyme' => ['DO $$ BEGIN PERFORM 1; END $$'],
+            'identifiant délimité hors fonction' => ['SELECT "pg_terminate_backend"(1)'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('dangerousRoutines')]
+    public function it_rejects_dangerous_routines(string $sql): void
+    {
+        $this->expectException(QueryRejected::class);
+
+        $this->guard->inspect($sql, self::ROUTINES);
+    }
+
+    #[Test]
+    public function dataset_scripts_cannot_define_routines(): void
+    {
+        $this->expectExceptionMessage('jeu de données');
+
+        $this->guard->inspectScript('CREATE TABLE t (x INT); CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;');
+    }
 }

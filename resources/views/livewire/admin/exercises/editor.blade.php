@@ -170,10 +170,11 @@
             <fieldset>
                 <legend class="{{ $label }}">Instructions autorisées</legend>
                 <div class="mt-2 flex flex-wrap gap-4 text-sm text-gray-700 dark:text-gray-300">
-                    @foreach (['select' => 'SELECT', 'dml' => 'INSERT / UPDATE / DELETE', 'ddl' => 'CREATE / ALTER / DROP'] as $value => $text)
+                    @foreach (['select' => 'SELECT', 'dml' => 'INSERT / UPDATE / DELETE', 'ddl' => 'CREATE / ALTER / DROP', 'routine' => 'Fonctions et procédures (PostgreSQL)'] as $value => $text)
                         <label class="flex items-center gap-2"><input type="checkbox" value="{{ $value }}" wire:model="allowedStatements" class="rounded border-gray-300 text-indigo-600"> {{ $text }}</label>
                     @endforeach
                 </div>
+                <p class="mt-1 text-xs text-gray-500">Code stocké : l'exercice n'est proposé que sur PostgreSQL. Vérifiez-le avec des requêtes de contrôle (« état des données »), par exemple <code>SELECT ma_fonction(id) FROM ...</code>.</p>
             </fieldset>
             <div class="grid grid-cols-2 gap-2">
                 <div>

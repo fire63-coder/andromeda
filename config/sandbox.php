@@ -62,6 +62,8 @@ return [
             'runner_username' => env('SANDBOX_PGSQL_RUNNER_USERNAME', 'andromeda_runner'),
             'runner_password' => env('SANDBOX_PGSQL_RUNNER_PASSWORD', ''),
             'lock_timeout_ms' => (int) env('SANDBOX_PGSQL_LOCK_TIMEOUT_MS', 1000),
+            // Lance le chien de garde des fonctions stockées (Runners/pg-watchdog.php).
+            'php_binary' => env('SANDBOX_PHP_BINARY', PHP_BINARY),
             // Utilisé uniquement par `sandbox:setup-pgsql` (sinon le mot de passe est demandé).
             'superuser_password' => env('SANDBOX_PGSQL_SUPERUSER_PASSWORD'),
         ],

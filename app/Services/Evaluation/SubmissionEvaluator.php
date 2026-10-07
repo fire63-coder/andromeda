@@ -128,6 +128,7 @@ class SubmissionEvaluator
     {
         $datasets = $this->datasets($exercise);
         $needsDdl = in_array('ddl', $exercise->validation_options['allowed_statements'] ?? [], true);
+        $needsRoutines = in_array('routine', $exercise->validation_options['allowed_statements'] ?? [], true);
 
         return SqlDialect::query()
             ->executable()
@@ -136,7 +137,8 @@ class SubmissionEvaluator
             ->get()
             ->filter(fn (SqlDialect $dialect) => $datasets->every(
                 fn (Dataset $dataset) => $this->sandbox->isExecutable($dataset, $dialect),
-            ) && (! $needsDdl || $this->sandbox->driver($dialect)->supportsDdl()))
+            ) && (! $needsDdl || $this->sandbox->driver($dialect)->supportsDdl())
+                && (! $needsRoutines || $this->sandbox->driver($dialect)->supportsRoutines()))
             ->values();
     }
 

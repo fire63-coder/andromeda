@@ -241,7 +241,7 @@ class ExerciseEditor extends Component
             'solutionSql' => [Rule::requiredIf(! $isMcq), 'nullable', 'string', 'max:20000'],
             'strategy' => ['required', Rule::enum(ValidationStrategy::class), $isMcq ? Rule::in(['choices']) : Rule::notIn(['choices'])],
             'allowedStatements' => ['array', 'min:1'],
-            'allowedStatements.*' => [Rule::in(['select', 'dml', 'ddl'])],
+            'allowedStatements.*' => [Rule::in(['select', 'dml', 'ddl', 'routine'])],
             'floatTolerance' => ['nullable', 'numeric', 'min:0', 'max:1000'],
             'hints.*.text' => ['required', 'string', 'max:1000'],
             'hints.*.xp_penalty' => ['required', 'integer', 'min:0', 'max:500'],

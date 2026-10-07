@@ -8,6 +8,7 @@ use App\Services\Sandbox\Exceptions\SandboxUnavailable;
 use App\Services\Sandbox\GuardedQuery;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SqliteProcess;
+use App\Services\Sandbox\StatementKind;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
@@ -66,6 +67,10 @@ class SqliteDriver implements SandboxDriver
         int $maxRows,
         array $checkQueries = [],
     ): QueryResult {
+        if ($query->has(StatementKind::Routine)) {
+            return QueryResult::failure('SQLite ne connaît pas les fonctions et procédures stockées : choisissez PostgreSQL.', QueryResult::ERROR_REJECTED);
+        }
+
         $template = $this->config['path'].'/templates/'.$this->prepare($build);
         $readOnly = $query->isReadOnly() && $checkQueries === [];
         $database = $template;
@@ -89,6 +94,11 @@ class SqliteDriver implements SandboxDriver
                 @unlink($database);
             }
         }
+    }
+
+    public function supportsRoutines(): bool
+    {
+        return false; // SQLite n'a pas de procédures stockées.
     }
 
     public function supportsDdl(): bool

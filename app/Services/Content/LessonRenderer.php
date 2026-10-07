@@ -13,6 +13,12 @@ use Illuminate\Support\Str;
  */
 class LessonRenderer
 {
+    /**
+     * Garde-fous des exemples exécutables : modifications, structure et code stocké permis
+     * (tout est annulé après exécution), pour illustrer les chapitres avancés.
+     */
+    public const SNIPPET_GUARD = ['allowed_statements' => ['select', 'dml', 'ddl', 'routine'], 'max_statements' => 10];
+
     private const FENCE = '/^```[ \t]*(sql[ \t]+runnable|mermaid)[^\n]*\n(.*?)^```[ \t]*$/ms';
 
     /**

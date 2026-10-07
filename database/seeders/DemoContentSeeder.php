@@ -277,14 +277,14 @@ class DemoContentSeeder extends Seeder
         );
     }
 
-    private function dataset(SchemaIntrospector $introspector, string $slug, string $name, string $description, string $schema, string $seed, bool $public): Dataset
+    protected function dataset(SchemaIntrospector $introspector, string $slug, string $name, string $description, string $schema, string $seed, bool $public, string $domain = 'e-commerce'): Dataset
     {
         $tables = $introspector->describe($schema, $seed);
 
         $dataset = Dataset::updateOrCreate(['slug' => $slug], [
             'name' => $name,
             'description' => $description,
-            'domain' => 'e-commerce',
+            'domain' => $domain,
             'source_format' => DatasetFormat::SqlDump,
             'source_dialect_id' => SqlDialect::where('slug', 'sqlite')->value('id'),
             'tables_meta' => $tables,
@@ -309,14 +309,14 @@ class DemoContentSeeder extends Seeder
         return $dataset;
     }
 
-    private function lesson(Level $level, string $courseSlug, string $courseTitle, string $chapterSlug, string $chapterTitle, string $lessonSlug, string $lessonTitle, Dataset $dataset, string $content): Lesson
+    protected function lesson(Level $level, string $courseSlug, string $courseTitle, string $chapterSlug, string $chapterTitle, string $lessonSlug, string $lessonTitle, Dataset $dataset, string $content, ?string $summary = null, int $chapterPosition = 0, int $lessonPosition = 0): Lesson
     {
         $course = Course::updateOrCreate(['slug' => $courseSlug], [
             'level_id' => $level->id,
             'title' => $courseTitle,
-            'summary' => $level->position === 1
+            'summary' => $summary ?? ($level->position === 1
                 ? 'Interroger une table : sélectionner, filtrer, trier.'
-                : 'Relier les tables, regrouper et résumer les données.',
+                : 'Relier les tables, regrouper et résumer les données.'),
             'status' => ContentStatus::Published,
             'published_at' => now(),
         ]);
@@ -324,12 +324,14 @@ class DemoContentSeeder extends Seeder
         $chapter = $course->chapters()->updateOrCreate(['slug' => $chapterSlug], [
             'title' => $chapterTitle,
             'schema_diagram' => $dataset->schema_diagram,
+            'position' => $chapterPosition,
         ]);
 
         return $chapter->lessons()->updateOrCreate(['slug' => $lessonSlug], [
             'title' => $lessonTitle,
             'dataset_id' => $dataset->id,
             'content_markdown' => $content,
+            'position' => $lessonPosition,
             'status' => ContentStatus::Published,
             'published_at' => now(),
         ]);
@@ -340,7 +342,7 @@ class DemoContentSeeder extends Seeder
      * @param  list<string>  $skills
      * @param  array<string, mixed>  $attributes
      */
-    private function exercise(Lesson $lesson, Level $level, array $datasets, array $skills, array $attributes): Exercise
+    protected function exercise(Lesson $lesson, Level $level, array $datasets, array $skills, array $attributes): Exercise
     {
         $exercise = Exercise::updateOrCreate(['slug' => $attributes['slug']], [
             'starter_sql' => null,

@@ -73,7 +73,7 @@ class LessonViewer extends Component
             ($message = $this->sandboxThrottled()) !== null => QueryResult::failure($message, QueryResult::ERROR_REJECTED),
             ! $this->lesson->dataset || ! $dialect => QueryResult::failure('Aucun jeu de données exécutable pour cette leçon.', QueryResult::ERROR_INTERNAL),
             // Les exemples peuvent illustrer des modifications : elles sont toujours annulées.
-            default => $sandbox->run($this->lesson->dataset, $dialect, $this->snippets[$index], ['allowed_statements' => ['select', 'dml'], 'max_statements' => 5]),
+            default => $sandbox->run($this->lesson->dataset, $dialect, $this->snippets[$index], LessonRenderer::SNIPPET_GUARD),
         };
 
         $this->results[$index] = $result->toPreview(50);
@@ -118,7 +118,14 @@ class LessonViewer extends Component
         $dataset = $this->lesson->dataset;
 
         return $dataset
-            ? SqlDialect::query()->executable()->orderBy('position')->get()->filter(fn (SqlDialect $d) => $sandbox->isExecutable($dataset, $d))->values()
+            ? SqlDialect::query()
+                ->executable()
+                // Cours propre à un moteur (ex. programmation PL/pgSQL) : ses exemples n'ont de sens que là.
+                ->when($this->course->sql_dialect_id, fn ($query) => $query->whereKey($this->course->sql_dialect_id))
+                ->orderBy('position')
+                ->get()
+                ->filter(fn (SqlDialect $d) => $sandbox->isExecutable($dataset, $d))
+                ->values()
             : collect();
     }
 
