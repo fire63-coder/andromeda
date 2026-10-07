@@ -2,6 +2,10 @@
 
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ExerciseIndexController;
+use App\Livewire\Admin\Certifications\CertificationEditor;
+use App\Livewire\Admin\Certifications\CertificationIndex;
+use App\Livewire\Admin\Challenges\ChallengeEditor;
+use App\Livewire\Admin\Challenges\ChallengeIndex;
 use App\Livewire\Admin\Courses\CourseEditor;
 use App\Livewire\Admin\Courses\CourseIndex;
 use App\Livewire\Admin\Courses\LessonEditor;
@@ -10,6 +14,9 @@ use App\Livewire\Admin\Datasets\DatasetIndex;
 use App\Livewire\Admin\Datasets\DatasetShow;
 use App\Livewire\Admin\Exercises\ExerciseEditor;
 use App\Livewire\Admin\Exercises\ExerciseIndex;
+use App\Livewire\Admin\Organizations\OrganizationIndex;
+use App\Livewire\Admin\Organizations\OrganizationShow;
+use App\Livewire\Admin\Users\UserIndex;
 use App\Livewire\Arena\ArenaIndex;
 use App\Livewire\Arena\ChallengeRunner;
 use App\Livewire\Certification\CertificationList;
@@ -65,5 +72,22 @@ Route::middleware([
         Route::get('/datasets', DatasetIndex::class)->name('datasets.index');
         Route::get('/datasets/importer', DatasetImportWizard::class)->name('datasets.import');
         Route::get('/datasets/{dataset:slug}', DatasetShow::class)->name('datasets.show');
+
+        // Réservé aux administrateurs (contrôlé par les policies).
+        Route::get('/certifications', CertificationIndex::class)->name('certifications.index');
+        Route::get('/certifications/creer', CertificationEditor::class)->name('certifications.create');
+        Route::get('/certifications/{certification:slug}', CertificationEditor::class)->name('certifications.edit');
+
+        Route::get('/defis', ChallengeIndex::class)->name('challenges.index');
+        Route::get('/defis/creer', ChallengeEditor::class)->name('challenges.create');
+        Route::get('/defis/{challenge:slug}', ChallengeEditor::class)->name('challenges.edit');
+
+        Route::get('/utilisateurs', UserIndex::class)->name('users.index');
+    });
+
+    // Organisations : administrateurs et responsables d'organisation (quel que soit leur rôle).
+    Route::prefix('admin')->name('admin.')->group(function () {
+        Route::get('/organisations', OrganizationIndex::class)->name('organizations.index');
+        Route::get('/organisations/{organization:slug}', OrganizationShow::class)->name('organizations.show');
     });
 });

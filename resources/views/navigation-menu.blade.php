@@ -1,3 +1,12 @@
+@php
+    // Responsables d'organisation sans rôle de formateur : accès direct à leurs organisations.
+    $adminHome = match (true) {
+        Auth::user()->canAuthorContent() => 'admin.courses.index',
+        Auth::user()->can('viewAny', \App\Models\Organization::class) => 'admin.organizations.index',
+        default => null,
+    };
+@endphp
+
 <nav x-data="{ open: false }" class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700">
     <!-- Primary Navigation Menu -->
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -30,8 +39,8 @@
                     <x-nav-link href="{{ route('leaderboard') }}" :active="request()->routeIs('leaderboard')">
                         Classement
                     </x-nav-link>
-                    @if (Auth::user()->canAuthorContent())
-                        <x-nav-link href="{{ route('admin.courses.index') }}" :active="request()->routeIs('admin.*')">
+                    @if ($adminHome)
+                        <x-nav-link href="{{ route($adminHome) }}" :active="request()->routeIs('admin.*')">
                             Administration
                         </x-nav-link>
                     @endif
@@ -182,8 +191,8 @@
             <x-responsive-nav-link href="{{ route('leaderboard') }}" :active="request()->routeIs('leaderboard')">
                 Classement
             </x-responsive-nav-link>
-            @if (Auth::user()->canAuthorContent())
-                <x-responsive-nav-link href="{{ route('admin.courses.index') }}" :active="request()->routeIs('admin.*')">
+            @if ($adminHome)
+                <x-responsive-nav-link href="{{ route($adminHome) }}" :active="request()->routeIs('admin.*')">
                     Administration
                 </x-responsive-nav-link>
             @endif

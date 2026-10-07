@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Organization extends Model
 {
@@ -27,5 +28,14 @@ class Organization extends Model
     public function challenges(): HasMany
     {
         return $this->hasMany(Challenge::class);
+    }
+
+    public static function generateInviteCode(): string
+    {
+        do {
+            $code = Str::upper(Str::random(4).'-'.Str::random(4));
+        } while (static::where('invite_code', $code)->exists());
+
+        return $code;
     }
 }
