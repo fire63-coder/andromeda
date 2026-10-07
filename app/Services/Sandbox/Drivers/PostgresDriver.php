@@ -102,7 +102,23 @@ class PostgresDriver implements SandboxDriver
             $pdo->exec('SET LOCAL lock_timeout = '.(int) $this->config['lock_timeout_ms']);
             $pdo->exec('SET LOCAL search_path TO '.$this->quoteIdentifier($schema));
 
+            $sessionCopies = $this->needsOwnedTables($query);
+
+            if ($sessionCopies) {
+                $this->copyTablesToSession($pdo, $schema);
+            }
+
             foreach ($query->statements as $index => $statement) {
+                // PostgreSQL ne cherche jamais les fonctions dans pg_temp : elles sont créées dans le
+                // schéma du build, et leurs requêtes liront quand même les copies à l'exécution.
+                if ($sessionCopies && $query->kinds[$index] === StatementKind::Routine) {
+                    $pdo->exec('SET LOCAL search_path TO '.$this->quoteIdentifier($schema));
+                    $pdo->exec($statement);
+                    $pdo->exec('SET LOCAL search_path TO pg_temp, '.$this->quoteIdentifier($schema));
+
+                    continue;
+                }
+
                 if ($query->kinds[$index] === StatementKind::Select
                     && in_array($this->lexer->firstWord($statement), self::CURSOR_WORDS, true)) {
                     $result = [...$result, ...$this->fetchThroughCursor($pdo, $statement, $maxRows)];
@@ -153,6 +169,47 @@ class PostgresDriver implements SandboxDriver
             durationMs: $duration,
             checks: $checks,
         );
+    }
+
+    /**
+     * CREATE INDEX, ALTER TABLE, DROP TABLE, TRUNCATE... exigent d'être propriétaire de la table,
+     * ce que le compte d'exécution n'est pas (et ne doit pas être : il lirait les jeux cachés).
+     */
+    private function needsOwnedTables(GuardedQuery $query): bool
+    {
+        foreach ($query->statements as $statement) {
+            if (preg_match('/^\s*(CREATE\s+(UNIQUE\s+)?INDEX|ALTER\s+(TABLE|INDEX)|DROP\s+(TABLE|INDEX)|TRUNCATE|COMMENT\s+ON|CLUSTER|REINDEX)\b/i', $statement)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Copie les tables du build dans le schéma temporaire de la session, placé en tête du
+     * search_path : l'élève en est propriétaire, et tout disparaît avec le ROLLBACK.
+     * Les index et contraintes sont copiés, pas les clés étrangères.
+     */
+    private function copyTablesToSession(PDO $pdo, string $schema): void
+    {
+        $quotedSchema = $this->quoteIdentifier($schema);
+        $tables = $pdo->query('SELECT c.oid, c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace '
+            .'WHERE n.nspname = '.$pdo->quote($schema)." AND c.relkind = 'r' ORDER BY c.relname")->fetchAll(PDO::FETCH_NUM);
+
+        foreach ($tables as [$oid, $table]) {
+            $quotedTable = $this->quoteIdentifier($table);
+            $columns = implode(', ', array_map(
+                fn (string $column) => $this->quoteIdentifier($column),
+                $pdo->query('SELECT attname FROM pg_attribute WHERE attrelid = '.(int) $oid
+                    ." AND attnum > 0 AND NOT attisdropped AND attgenerated = '' ORDER BY attnum")->fetchAll(PDO::FETCH_COLUMN),
+            ));
+
+            $pdo->exec("CREATE TEMPORARY TABLE {$quotedTable} (LIKE {$quotedSchema}.{$quotedTable} INCLUDING ALL)");
+            $pdo->exec("INSERT INTO pg_temp.{$quotedTable} ({$columns}) OVERRIDING SYSTEM VALUE SELECT {$columns} FROM {$quotedSchema}.{$quotedTable}");
+        }
+
+        $pdo->exec("SET LOCAL search_path TO pg_temp, {$quotedSchema}");
     }
 
     public function supportsDdl(): bool

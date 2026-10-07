@@ -5,6 +5,7 @@ namespace Tests\Feature\Learn;
 use App\Enums\SubmissionStatus;
 use App\Livewire\Learn\LessonViewer;
 use App\Models\Course;
+use App\Models\Dataset;
 use App\Models\Exercise;
 use App\Models\SqlDialect;
 use App\Models\User;
@@ -64,7 +65,7 @@ class AdvancedContentTest extends TestCase
         $renderer = app(LessonRenderer::class);
         $sandbox = app(SandboxManager::class);
 
-        foreach (Course::whereIn('slug', ['sql-avance', 'programmation-postgresql'])->with('chapters.lessons.dataset', 'dialect')->get() as $course) {
+        foreach (Course::whereIn('slug', ['sql-avance', 'programmation-postgresql', 'optimisation-des-requetes'])->with('chapters.lessons.dataset', 'dialect')->get() as $course) {
             $dialects = $course->dialect ? collect([$course->dialect]) : SqlDialect::query()->executable()->get();
 
             foreach ($course->chapters->flatMap->lessons as $lesson) {
@@ -157,5 +158,58 @@ class AdvancedContentTest extends TestCase
             ->assertSet('dialect', 'pgsql')
             ->call('runSnippet', 0)
             ->assertSet('results.0.success', true);
+    }
+
+    #[Test]
+    public function index_exercises_read_the_execution_plan_on_each_engine(): void
+    {
+        $exercise = $this->exercise('index-jointure-par-ville');
+
+        foreach (['sqlite', 'pgsql'] as $slug) {
+            $dialect = $slug === 'pgsql' ? $this->requirePostgres() : SqlDialect::where('slug', $slug)->firstOrFail();
+
+            $this->assertSame(SubmissionStatus::Correct, $this->evaluator->evaluate($exercise, $dialect, $exercise->solution_sql)->status, $slug);
+
+            // Un seul des deux index : la jointure parcourt encore employees.
+            $half = $this->evaluator->evaluate($exercise, $dialect, 'CREATE INDEX idx_city ON departments (city)');
+            $this->assertSame(SubmissionStatus::Wrong, $half->status, $slug);
+            $this->assertStringContainsString('« employees »', $half->message);
+            $this->assertNotEmpty($half->feedback['plan']);
+
+            // Index sur la mauvaise colonne.
+            $wrong = $this->evaluator->evaluate($this->exercise('index-subordonnes'), $dialect, 'CREATE INDEX ix ON employees (department_id)');
+            $this->assertSame(SubmissionStatus::Wrong, $wrong->status, $slug);
+        }
+
+        $this->assertNotContains('mysql', $this->evaluator->availableDialects($exercise)->pluck('slug')->all());
+    }
+
+    #[Test]
+    public function a_rewritten_query_must_keep_its_result_and_use_the_index(): void
+    {
+        $exercise = $this->exercise('bug-condition-non-indexable');
+        $sqlite = SqlDialect::where('slug', 'sqlite')->firstOrFail();
+
+        $this->assertSame(SubmissionStatus::Correct, $this->evaluator->evaluate($exercise, $sqlite, $exercise->solution_sql)->status);
+
+        // Indexable mais faux : la borne de fin manque.
+        $result = $this->evaluator->evaluate($exercise, $sqlite, "SELECT name, hired_at FROM employees WHERE hired_at >= '2021-01-01'");
+        $this->assertSame(SubmissionStatus::Wrong, $result->status);
+        $this->assertArrayNotHasKey('plan', $result->feedback);
+    }
+
+    #[Test]
+    public function index_creation_on_postgresql_does_not_touch_the_dataset(): void
+    {
+        $pgsql = $this->requirePostgres();
+        $sandbox = app(SandboxManager::class);
+        $dataset = Dataset::where('slug', 'entreprise')->firstOrFail();
+
+        $result = $sandbox->run($dataset, $pgsql, 'CREATE INDEX ix_tmp ON employees (manager_id); ALTER TABLE employees ADD COLUMN prime numeric; UPDATE employees SET prime = 1', ['allowed_statements' => ['ddl', 'dml'], 'max_statements' => 3]);
+        $this->assertTrue($result->success, (string) $result->error);
+
+        $after = $sandbox->run($dataset, $pgsql, "SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'ix_tmp'");
+        $this->assertSame([[0]], $after->rows);
+        $this->assertStringContainsString('prime', (string) $sandbox->run($dataset, $pgsql, 'SELECT prime FROM employees')->error);
     }
 }

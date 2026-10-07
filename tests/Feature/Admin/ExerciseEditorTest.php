@@ -171,4 +171,22 @@ class ExerciseEditorTest extends TestCase
         $this->get(route('admin.exercises.edit', $demo))->assertForbidden();
         $this->actingAs($this->admin)->get(route('admin.exercises.edit', $demo))->assertOk()->assertSee('Les clients lyonnais');
     }
+
+    #[Test]
+    public function saving_a_seeded_exercise_keeps_its_control_queries_and_plan_options(): void
+    {
+        foreach (['fonction-salaire-annuel', 'trigger-audit-salaires', 'index-jointure-par-ville', 'bug-condition-non-indexable'] as $slug) {
+            $exercise = Exercise::where('slug', $slug)->firstOrFail();
+            $before = ['allowed_statements' => ['select'], ...$exercise->validation_options]; // valeur par défaut explicitée
+
+            Livewire::actingAs($this->admin)->test(ExerciseEditor::class, ['exercise' => $exercise])
+                ->call('save')
+                ->assertHasNoErrors();
+
+            $after = $exercise->fresh()->validation_options;
+            ksort($before);
+            ksort($after);
+            $this->assertEquals($before, $after, $slug);
+        }
+    }
 }

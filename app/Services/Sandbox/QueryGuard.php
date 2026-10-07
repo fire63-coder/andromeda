@@ -167,8 +167,9 @@ class QueryGuard
         }
 
         if (in_array($first, self::SELECT_WORDS, true)) {
-            // WITH ... DELETE / INSERT (CTE modifiante PostgreSQL) = DML.
-            if ($first === 'WITH' && array_intersect($words, ['INSERT', 'UPDATE', 'DELETE', 'MERGE']) !== []) {
+            // WITH ... DELETE / INSERT (CTE modifiante PostgreSQL) = DML ;
+            // EXPLAIN ANALYZE exécute réellement l'instruction expliquée.
+            if (in_array($first, ['WITH', 'EXPLAIN'], true) && array_intersect($words, ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE']) !== []) {
                 return StatementKind::Dml;
             }
 

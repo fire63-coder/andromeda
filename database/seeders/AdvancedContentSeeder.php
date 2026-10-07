@@ -18,7 +18,8 @@ use App\Services\Datasets\SchemaIntrospector;
 /**
  * Contenu des niveaux 3 et 4 sur le jeu « Entreprise » :
  * - Avancé : fonctions de fenêtrage, requêtes récursives, certification ;
- * - Expert : programmation PostgreSQL (fonctions SQL et PL/pgSQL, procédures, triggers).
+ * - Expert : programmation PostgreSQL (fonctions SQL et PL/pgSQL, procédures, triggers),
+ *   optimisation (index, plans d'exécution) et certification SQL — Expert.
  */
 class AdvancedContentSeeder extends DemoContentSeeder
 {
@@ -35,6 +36,8 @@ class AdvancedContentSeeder extends DemoContentSeeder
 
         $this->advancedCourse($advanced, $company, $hidden);
         $this->expertCourse($expert, $company, $hidden);
+        $this->optimizationCourse($expert, $company, $hidden);
+        $this->expertCertification($expert, $company, $hidden);
     }
 
     private function advancedCourse(Level $level, Dataset $company, Dataset $hidden): void
@@ -503,6 +506,227 @@ class AdvancedContentSeeder extends DemoContentSeeder
             ['body' => 'AFTER INSERT OR UPDATE ... FOR EACH ROW, qui modifie NEW', 'is_correct' => false, 'explanation' => 'Dans un trigger AFTER, la ligne est déjà écrite : modifier NEW n\'a aucun effet.', 'position' => 2],
             ['body' => 'AFTER INSERT OR UPDATE ... FOR EACH STATEMENT', 'is_correct' => false, 'explanation' => 'Un trigger d\'instruction n\'a ni OLD ni NEW : il ne voit pas les lignes.', 'position' => 3],
             ['body' => 'Aucun : seule une contrainte CHECK le permet', 'is_correct' => false, 'explanation' => 'Une contrainte CHECK refuserait les majuscules, elle ne les convertirait pas.', 'position' => 4],
+        ]);
+    }
+
+    private function optimizationCourse(Level $level, Dataset $company, Dataset $hidden): void
+    {
+        $pgsql = SqlDialect::where('slug', 'pgsql')->firstOrFail();
+
+        $lesson = $this->lesson($level, 'optimisation-des-requetes', 'Optimisation des requêtes', 'index', 'Index et plans d\'exécution', 'index-et-plans', 'Index et plans d\'exécution', $company, <<<'MD'
+            # Index et plans d'exécution
+
+            Avant d'exécuter une requête, le moteur choisit un **plan** : dans quel ordre lire les tables, et
+            comment. `EXPLAIN` affiche ce plan sans exécuter la requête :
+
+            ```sql runnable
+            EXPLAIN SELECT name FROM employees WHERE manager_id = 5;
+            ```
+
+            `Seq Scan` signifie que **toute la table** est lue. Sur 13 lignes, c'est le meilleur choix ; sur
+            des millions, c'est catastrophique.
+
+            ## Mesurer avec EXPLAIN ANALYZE
+
+            `EXPLAIN ANALYZE` exécute vraiment la requête et affiche les temps mesurés. Créons une table de
+            200 000 mesures, puis cherchons celles d'un capteur :
+
+            ```sql runnable
+            CREATE TABLE mesures AS
+            SELECT g AS id, g % 1000 AS capteur, round((random() * 100)::numeric, 2) AS valeur
+            FROM generate_series(1, 200000) AS g;
+
+            EXPLAIN ANALYZE SELECT * FROM mesures WHERE capteur = 42;
+            ```
+
+            Ajoutons un **index** sur la colonne filtrée, et comparez le temps d'exécution :
+
+            ```sql runnable
+            CREATE TABLE mesures AS
+            SELECT g AS id, g % 1000 AS capteur, round((random() * 100)::numeric, 2) AS valeur
+            FROM generate_series(1, 200000) AS g;
+
+            CREATE INDEX idx_mesures_capteur ON mesures (capteur);
+
+            EXPLAIN ANALYZE SELECT * FROM mesures WHERE capteur = 42;
+            ```
+
+            Le moteur passe par l'index (`Bitmap Index Scan` / `Index Scan`) : il ne lit plus que les 200 lignes utiles.
+
+            ## Une condition « indexable »
+
+            Un index sur `hired_at` existe déjà. Il n'est utilisable que si la condition porte sur la colonne
+            **telle quelle** :
+
+            | Condition | Index utilisable ? |
+            |---|---|
+            | `hired_at >= '2021-01-01' AND hired_at < '2022-01-01'` | oui (plage) |
+            | `CAST(hired_at AS VARCHAR(10)) LIKE '2021%'` | non : la colonne est transformée |
+            | `EXTRACT(YEAR FROM hired_at) = 2021` | non, sauf index sur l'expression |
+
+            ## Index composites
+
+            Un index sur `(department_id, job_title)` sert aux recherches sur `department_id`, ou sur
+            `department_id` **et** `job_title` ; pas, en général, à une recherche sur `job_title` seul :
+            l'ordre des colonnes compte.
+
+            > Dans les exercices, le correcteur lit le plan d'exécution. Sur ces petites tables, il interdit à
+            > PostgreSQL le parcours séquentiel (`enable_seqscan = off`) pour révéler s'il **existe** un index utilisable.
+
+            MD, 'Index, plans d\'exécution et conditions indexables : lire EXPLAIN et faire les bons choix.');
+
+        Course::where('slug', 'optimisation-des-requetes')->update(['sql_dialect_id' => $pgsql->id]);
+
+        $datasets = [$company, $hidden];
+
+        $this->exercise($lesson, $level, $datasets, ['indexing'], [
+            'slug' => 'index-subordonnes',
+            'title' => 'Index : retrouver les subordonnés',
+            'type' => ExerciseType::QueryWrite,
+            'statement' => "L'application affiche très souvent l'équipe d'un manager :\n\n```sql\nSELECT name FROM employees WHERE manager_id = 5;\n```\n\nCréez l'index qui permet au moteur de trouver ces lignes **sans parcourir toute la table**.",
+            'starter_sql' => 'CREATE INDEX ',
+            'solution_sql' => 'CREATE INDEX idx_employees_manager ON employees (manager_id);',
+            'validation_strategy' => ValidationStrategy::QueryPlan,
+            'validation_options' => [
+                'allowed_statements' => ['ddl'],
+                'max_statements' => 2,
+                'forbidden_keywords' => ['DROP', 'ALTER'],
+                'plan_query' => 'SELECT name FROM employees WHERE manager_id = 5',
+                'index_tables' => ['employees'],
+            ],
+            'hints' => [
+                ['text' => 'La syntaxe : `CREATE INDEX nom_index ON table (colonne);`', 'xp_penalty' => 5],
+                ['text' => 'Indexez la colonne qui apparaît dans le `WHERE` : `manager_id`.', 'xp_penalty' => 5],
+            ],
+            'difficulty' => 2,
+            'xp_reward' => 40,
+            'position' => 1,
+        ]);
+
+        $this->exercise($lesson, $level, $datasets, ['indexing', 'query-tuning'], [
+            'slug' => 'bug-condition-non-indexable',
+            'title' => 'Chasse au bug : l\'index ignoré',
+            'type' => ExerciseType::BugFix,
+            'statement' => "Cette requête liste les embauches de **2021**. Elle donne le bon résultat, mais n'utilise pas l'index `idx_employees_hired_at` : sur une grosse table, elle lit toutes les lignes.\n\nRéécrivez la condition pour que l'index soit utilisable, sans changer le résultat.",
+            'starter_sql' => "SELECT name, hired_at\nFROM employees\nWHERE CAST(hired_at AS VARCHAR(10)) LIKE '2021%';",
+            'solution_sql' => "SELECT name, hired_at\nFROM employees\nWHERE hired_at >= '2021-01-01' AND hired_at < '2022-01-01';",
+            'validation_strategy' => ValidationStrategy::QueryPlan,
+            'validation_options' => [
+                'index_tables' => ['employees'],
+            ],
+            'hints' => [
+                ['text' => 'Une fonction ou une conversion appliquée à la colonne empêche d\'utiliser son index.', 'xp_penalty' => 5],
+                ['text' => 'Exprimez « en 2021 » comme une plage : `hired_at >= \'2021-01-01\' AND hired_at < \'2022-01-01\'`.', 'xp_penalty' => 10],
+            ],
+            'difficulty' => 3,
+            'xp_reward' => 50,
+            'position' => 2,
+        ]);
+
+        $this->exercise($lesson, $level, $datasets, ['indexing', 'joins'], [
+            'slug' => 'index-jointure-par-ville',
+            'title' => 'Index : une jointure sans parcours complet',
+            'type' => ExerciseType::QueryWrite,
+            'statement' => "Créez les index nécessaires pour que cette requête n'ait à parcourir **aucune** des deux tables en entier :\n\n```sql\nSELECT d.name, e.name\nFROM departments d\nJOIN employees e ON e.department_id = d.id\nWHERE d.city = 'Paris';\n```",
+            'starter_sql' => "CREATE INDEX \n",
+            'solution_sql' => "CREATE INDEX idx_departments_city ON departments (city);\nCREATE INDEX idx_employees_department ON employees (department_id);",
+            'validation_strategy' => ValidationStrategy::QueryPlan,
+            'validation_options' => [
+                'allowed_statements' => ['ddl'],
+                'max_statements' => 4,
+                'forbidden_keywords' => ['DROP', 'ALTER'],
+                'plan_query' => "SELECT d.name, e.name FROM departments d JOIN employees e ON e.department_id = d.id WHERE d.city = 'Paris'",
+                'index_tables' => ['departments', 'employees'],
+            ],
+            'hints' => [
+                ['text' => 'Deux accès à rendre indexables : le filtre `d.city = \'Paris\'` et la jointure `e.department_id = d.id`.', 'xp_penalty' => 5],
+                ['text' => '`departments.id` est déjà indexé (clé primaire), mais pas `employees.department_id`.', 'xp_penalty' => 10],
+            ],
+            'difficulty' => 3,
+            'xp_reward' => 50,
+            'position' => 3,
+        ]);
+
+        $mcq = $this->exercise($lesson, $level, [], ['indexing'], [
+            'slug' => 'qcm-index-composite',
+            'title' => 'QCM : l\'ordre des colonnes d\'un index',
+            'type' => ExerciseType::MultipleChoice,
+            'statement' => 'La table `employees` possède un index sur `(department_id, job_title)`. Quelle requête peut **chercher** dans cet index (et pas seulement le parcourir) ?',
+            'validation_strategy' => ValidationStrategy::Choices,
+            'difficulty' => 2,
+            'xp_reward' => 15,
+            'position' => 4,
+        ]);
+        $mcq->choices()->delete();
+        $mcq->choices()->createMany([
+            ['body' => 'WHERE department_id = 2', 'is_correct' => true, 'explanation' => 'La première colonne de l\'index suffit à cibler une plage de l\'index.', 'position' => 1],
+            ['body' => "WHERE job_title = 'DSI'", 'is_correct' => false, 'explanation' => 'Sans la première colonne, les entrées recherchées sont dispersées dans tout l\'index.', 'position' => 2],
+            ['body' => "WHERE UPPER(job_title) = 'DSI' AND department_id + 0 = 2", 'is_correct' => false, 'explanation' => 'Les deux colonnes sont transformées : aucune n\'est utilisable telle quelle.', 'position' => 3],
+            ['body' => "WHERE department_id = 2 OR job_title = 'DSI'", 'is_correct' => false, 'explanation' => 'Le OR porte aussi sur job_title seul : ces lignes peuvent être n\'importe où dans l\'index.', 'position' => 4],
+        ]);
+    }
+
+    /**
+     * Certification SQL — Expert : code stocké PostgreSQL et indexation.
+     */
+    private function expertCertification(Level $level, Dataset $company, Dataset $hidden): void
+    {
+        $pgsql = SqlDialect::where('slug', 'pgsql')->firstOrFail();
+        $mcq = Exercise::where('slug', 'qcm-before-ou-after')->firstOrFail();
+
+        $this->certify($level, [$company, $hidden], $mcq, 'sql-expert', 'Certification SQL — Expert', 'Fonctions, triggers et indexation sur PostgreSQL : 3 questions tirées au sort, 40 minutes.', 40, 400, [
+            [
+                'slug' => 'cert-fonction-masse-salariale',
+                'title' => 'Fonction : masse salariale d\'un département',
+                'sql_dialect_id' => $pgsql->id,
+                'statement' => 'Écrivez la fonction `masse_salariale(dept_id integer) RETURNS numeric` qui renvoie la somme des salaires mensuels du département, et **0** (pas `NULL`) pour un département sans employé ou inconnu.',
+                'starter_sql' => "CREATE FUNCTION masse_salariale(dept_id integer) RETURNS numeric\nLANGUAGE sql AS $$\n    \n$$;",
+                'solution_sql' => "CREATE FUNCTION masse_salariale(dept_id integer) RETURNS numeric\nLANGUAGE sql AS $$\n    SELECT COALESCE(SUM(salary), 0) FROM employees WHERE department_id = dept_id\n$$;",
+                'validation_strategy' => ValidationStrategy::StateCheck,
+                'validation_options' => [
+                    'allowed_statements' => ['routine'],
+                    'max_statements' => 1,
+                    'float_tolerance' => 0.01,
+                    'check_queries' => [
+                        'masse_salariale(id)' => 'SELECT id, masse_salariale(id) AS masse FROM departments ORDER BY id',
+                        'masse_salariale(-1)' => 'SELECT masse_salariale(-1) AS masse',
+                    ],
+                ],
+                'skills' => ['stored-procedures'],
+            ],
+            [
+                'slug' => 'cert-trigger-salaire-plancher',
+                'title' => 'Trigger : un salaire ne baisse jamais',
+                'sql_dialect_id' => $pgsql->id,
+                'statement' => "Écrivez un trigger sur `employees` qui empêche toute **baisse** de salaire : si une mise à jour propose un salaire inférieur à l'ancien, l'ancien salaire est conservé (sans erreur). Les hausses s'appliquent normalement.",
+                'solution_sql' => "CREATE FUNCTION salaire_plancher() RETURNS trigger\nLANGUAGE plpgsql AS $$\nBEGIN\n    IF NEW.salary < OLD.salary THEN\n        NEW.salary := OLD.salary;\n    END IF;\n    RETURN NEW;\nEND\n$$;\n\nCREATE TRIGGER trg_salaire_plancher\nBEFORE UPDATE OF salary ON employees\nFOR EACH ROW EXECUTE FUNCTION salaire_plancher();",
+                'validation_strategy' => ValidationStrategy::StateCheck,
+                'validation_options' => [
+                    'allowed_statements' => ['routine', 'ddl'],
+                    'max_statements' => 3,
+                    'check_queries' => [
+                        'baisse' => 'WITH maj AS (UPDATE employees SET salary = salary - 500 WHERE department_id = 2 RETURNING id, salary) SELECT id, salary FROM maj ORDER BY id',
+                        'hausse' => 'WITH maj AS (UPDATE employees SET salary = salary + 50 WHERE department_id = 3 RETURNING id, salary) SELECT id, salary FROM maj ORDER BY id',
+                        'employees' => 'SELECT id, salary FROM employees ORDER BY id',
+                    ],
+                ],
+                'skills' => ['triggers'],
+            ],
+            [
+                'slug' => 'cert-index-intitule',
+                'title' => 'Index : recherche par intitulé de poste',
+                'statement' => "Créez l'index qui permet d'exécuter cette requête sans parcourir toute la table :\n\n```sql\nSELECT name, salary FROM employees WHERE job_title = 'Développeur';\n```",
+                'solution_sql' => 'CREATE INDEX idx_employees_job_title ON employees (job_title);',
+                'validation_strategy' => ValidationStrategy::QueryPlan,
+                'validation_options' => [
+                    'allowed_statements' => ['ddl'],
+                    'max_statements' => 2,
+                    'forbidden_keywords' => ['DROP', 'ALTER'],
+                    'plan_query' => "SELECT name, salary FROM employees WHERE job_title = 'Développeur'",
+                    'index_tables' => ['employees'],
+                ],
+                'skills' => ['indexing'],
+            ],
         ]);
     }
 

@@ -21,3 +21,6 @@ CREATE TABLE salary_audit (
     old_salary NUMERIC(10, 2) NOT NULL,
     new_salary NUMERIC(10, 2) NOT NULL
 );
+
+-- Index secondaire (chapitre « Optimisation ») : les recherches par date d'embauche peuvent l'utiliser.
+CREATE INDEX idx_employees_hired_at ON employees (hired_at);

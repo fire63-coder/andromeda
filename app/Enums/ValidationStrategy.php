@@ -11,6 +11,7 @@ enum ValidationStrategy: string
     case OrderedResultSet = 'ordered_result_set';
     case StateCheck = 'state_check';
     case Choices = 'choices';
+    case QueryPlan = 'query_plan';
 
     public function label(): string
     {
@@ -19,6 +20,7 @@ enum ValidationStrategy: string
             self::OrderedResultSet => 'Résultat identique (ordre compris)',
             self::StateCheck => 'État des tables après exécution (DML/DDL)',
             self::Choices => 'Réponses de QCM',
+            self::QueryPlan => 'Plan d\'exécution (recherche par index)',
         };
     }
 

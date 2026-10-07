@@ -207,6 +207,17 @@
                                 @endif
                             @endforeach
 
+                            @if (! empty($verdict['feedback']['plan']))
+                                <div class="mt-3" data-testid="query-plan">
+                                    <p class="text-xs font-semibold uppercase tracking-wide opacity-80">Plan d'exécution</p>
+                                    <ul class="mt-1 space-y-0.5 font-mono text-xs">
+                                        @foreach ($verdict['feedback']['plan'] as $line)
+                                            <li>{{ $line }}</li>
+                                        @endforeach
+                                    </ul>
+                                </div>
+                            @endif
+
                             @if (! empty($verdict['feedback']['choices']))
                                 <ul class="mt-3 space-y-1 text-sm">
                                     @foreach ($verdict['feedback']['choices'] as $choice)

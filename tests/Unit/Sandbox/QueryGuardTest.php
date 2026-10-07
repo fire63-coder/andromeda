@@ -232,4 +232,13 @@ class QueryGuardTest extends TestCase
 
         $this->guard->inspectScript('CREATE TABLE t (x INT); CREATE FUNCTION f() RETURNS int LANGUAGE sql AS $$ SELECT 1 $$;');
     }
+
+    #[Test]
+    public function explain_analyze_of_a_modification_is_a_modification(): void
+    {
+        $this->assertSame([StatementKind::Select], $this->guard->inspect('EXPLAIN SELECT * FROM t')->kinds);
+
+        $this->expectExceptionMessage("n'accepte que");
+        $this->guard->inspect('EXPLAIN ANALYZE DELETE FROM t');
+    }
 }

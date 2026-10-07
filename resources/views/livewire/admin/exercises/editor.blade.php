@@ -174,6 +174,11 @@
                         <label class="flex items-center gap-2"><input type="checkbox" value="{{ $value }}" wire:model="allowedStatements" class="rounded border-gray-300 text-indigo-600"> {{ $text }}</label>
                     @endforeach
                 </div>
+                <label class="mt-2 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    Instructions max.
+                    <input type="number" wire:model="maxStatements" min="1" max="50" placeholder="auto" class="w-20 rounded-md border-gray-300 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                </label>
+                @if ($error('maxStatements')) <p class="mt-1 text-sm text-rose-600">{{ $error('maxStatements') }}</p> @endif
                 <p class="mt-1 text-xs text-gray-500">Code stocké : l'exercice n'est proposé que sur PostgreSQL. Vérifiez-le avec des requêtes de contrôle (« état des données »), par exemple <code>SELECT ma_fonction(id) FROM ...</code>.</p>
             </fieldset>
             <div class="grid grid-cols-2 gap-2">
@@ -202,6 +207,18 @@
                     <label class="{{ $label }}" for="checks">Requêtes de contrôle (une par ligne : <code>nom: SELECT …</code>)</label>
                     <textarea id="checks" wire:model="checkQueries" rows="3" class="{{ $mono }}"></textarea>
                     @if ($error('checkQueries')) <p class="mt-1 text-sm text-rose-600">{{ $error('checkQueries') }}</p> @endif
+                </div>
+            @endif
+            @if ($strategy === 'query_plan')
+                <div class="sm:col-span-2">
+                    <label class="{{ $label }}" for="planQuery">Requête analysée (vide = la requête de l'élève, comparée aussi à la solution)</label>
+                    <textarea id="planQuery" wire:model="planQuery" rows="2" class="{{ $mono }}" placeholder="SELECT name FROM employees WHERE manager_id = 5"></textarea>
+                </div>
+                <div>
+                    <label class="{{ $label }}" for="indexTables">Tables à atteindre par un index</label>
+                    <input id="indexTables" type="text" wire:model="indexTables" class="{{ $input }}" placeholder="employees">
+                    @if ($error('indexTables')) <p class="mt-1 text-sm text-rose-600">{{ $error('indexTables') }}</p> @endif
+                    <p class="mt-1 text-xs text-gray-500">SQLite et PostgreSQL uniquement. Sur PostgreSQL, le parcours séquentiel est désactivé pendant l'analyse.</p>
                 </div>
             @endif
             @if ($type === 'timed')

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Evaluation\Comparators\ResultSetComparator;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\SqlLexer;
 use Illuminate\Support\Collection;
 
 /**
@@ -28,6 +29,8 @@ class SubmissionEvaluator
         private readonly SandboxManager $sandbox,
         private readonly ExpectedResultResolver $expected,
         private readonly ResultSetComparator $comparator,
+        private readonly PlanInspector $plans,
+        private readonly SqlLexer $lexer,
     ) {}
 
     /**
@@ -63,6 +66,14 @@ class SubmissionEvaluator
 
         if ($datasets->isEmpty()) {
             return $this->misconfigured('aucun jeu de données lié');
+        }
+
+        $planQuery = $exercise->validation_options['plan_query'] ?? null;
+
+        // Index à créer pour une requête donnée : seul le plan compte, sur le jeu visible.
+        if ($exercise->validation_strategy === ValidationStrategy::QueryPlan && filled($planQuery)) {
+            return $this->checkPlan($exercise, $dialect, $datasets->first(), $sql, $planQuery)
+                ?? new EvaluationResult(SubmissionStatus::Correct, 100, 'Bravo ! La requête s\'appuie désormais sur un index.');
         }
 
         $primaryResult = null;
@@ -109,6 +120,15 @@ class SubmissionEvaluator
             }
         }
 
+        // Requête à réécrire : bon résultat partout, puis recherche indexée sur le jeu visible.
+        if ($exercise->validation_strategy === ValidationStrategy::QueryPlan) {
+            $ownQuery = $this->lexer->statements($sql)[0] ?? $sql;
+
+            if ($verdict = $this->checkPlan($exercise, $dialect, $datasets->first(), $sql, $ownQuery)) {
+                return $verdict;
+            }
+        }
+
         return new EvaluationResult(
             SubmissionStatus::Correct,
             100,
@@ -129,6 +149,7 @@ class SubmissionEvaluator
         $datasets = $this->datasets($exercise);
         $needsDdl = in_array('ddl', $exercise->validation_options['allowed_statements'] ?? [], true);
         $needsRoutines = in_array('routine', $exercise->validation_options['allowed_statements'] ?? [], true);
+        $needsPlans = $exercise->validation_strategy === ValidationStrategy::QueryPlan;
 
         return SqlDialect::query()
             ->executable()
@@ -138,7 +159,8 @@ class SubmissionEvaluator
             ->filter(fn (SqlDialect $dialect) => $datasets->every(
                 fn (Dataset $dataset) => $this->sandbox->isExecutable($dataset, $dialect),
             ) && (! $needsDdl || $this->sandbox->driver($dialect)->supportsDdl())
-                && (! $needsRoutines || $this->sandbox->driver($dialect)->supportsRoutines()))
+                && (! $needsRoutines || $this->sandbox->driver($dialect)->supportsRoutines())
+                && (! $needsPlans || $this->plans->supports($dialect)))
             ->values();
     }
 
@@ -175,6 +197,55 @@ class SubmissionEvaluator
             $exercise->max_execution_ms,
             $exercise->validation_strategy === ValidationStrategy::StateCheck ? ($options['check_queries'] ?? []) : [],
         );
+    }
+
+    /**
+     * Exécute le code de l'élève puis le plan de $planQuery : chaque table de
+     * validation_options.index_tables doit être atteinte par une recherche indexée.
+     */
+    private function checkPlan(Exercise $exercise, SqlDialect $dialect, Dataset $dataset, string $sql, string $planQuery): ?EvaluationResult
+    {
+        $options = $exercise->validation_options ?? [];
+
+        $result = $this->sandbox->run(
+            $dataset,
+            $dialect,
+            $sql,
+            array_intersect_key($options, array_flip(self::GUARD_OPTIONS)),
+            $exercise->max_execution_ms,
+            $this->plans->checkQueries($dialect, $planQuery),
+        );
+
+        if (! $result->success) {
+            return new EvaluationResult($this->statusForError($result), 0, $result->error, result: $result);
+        }
+
+        $accesses = $this->plans->accesses($dialect, $result->checks, $planQuery);
+        $plan = ['plan' => array_column($accesses, 'detail')];
+
+        foreach ($options['index_tables'] ?? [] as $table) {
+            $hits = array_filter($accesses, fn (array $access) => $access['table'] === strtolower($table));
+
+            if ($hits === []) {
+                return $this->misconfigured("la table {$table} n'apparaît pas dans le plan d'exécution", $result);
+            }
+
+            foreach ($hits as $access) {
+                if (! $access['indexed']) {
+                    return new EvaluationResult(
+                        SubmissionStatus::Wrong,
+                        0,
+                        "La table « {$table} » est encore parcourue en entier ({$access['detail']}). "
+                            .'Le moteur ne trouve pas d\'index utilisable pour la condition : vérifiez la colonne indexée, '
+                            .'et qu\'aucune fonction ni conversion n\'est appliquée à la colonne filtrée.',
+                        $plan,
+                        $result,
+                    );
+                }
+            }
+        }
+
+        return null;
     }
 
     private function compare(Exercise $exercise, QueryResult $actual, QueryResult $expected): Comparison

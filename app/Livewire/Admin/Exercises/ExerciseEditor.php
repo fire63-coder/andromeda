@@ -62,10 +62,18 @@ class ExerciseEditor extends Component
 
     public ?string $floatTolerance = null;
 
+    /** Nombre maximal d'instructions (vide = 1 pour une lecture, 20 sinon). */
+    public ?int $maxStatements = null;
+
     public bool $checkColumnNames = false;
 
     /** Une requête de contrôle par ligne : « nom: SELECT … ». */
     public string $checkQueries = '';
+
+    /** Stratégie « plan d'exécution » : requête analysée (vide = celle de l'élève) et tables à atteindre par index. */
+    public string $planQuery = '';
+
+    public string $indexTables = '';
 
     /** @var list<array{text: string, xp_penalty: int|string}> */
     public array $hints = [];
@@ -125,8 +133,11 @@ class ExerciseEditor extends Component
             'requiredKeywords' => implode(', ', $options['required_keywords'] ?? []),
             'forbiddenKeywords' => implode(', ', $options['forbidden_keywords'] ?? []),
             'floatTolerance' => isset($options['float_tolerance']) ? (string) $options['float_tolerance'] : null,
+            'maxStatements' => $options['max_statements'] ?? null,
             'checkColumnNames' => (bool) ($options['check_column_names'] ?? false),
             'checkQueries' => collect($options['check_queries'] ?? [])->map(fn ($sql, $name) => "{$name}: {$sql}")->implode("\n"),
+            'planQuery' => (string) ($options['plan_query'] ?? ''),
+            'indexTables' => implode(', ', $options['index_tables'] ?? []),
             'hints' => array_map(fn (array $hint) => ['text' => $hint['text'], 'xp_penalty' => $hint['xp_penalty'] ?? 0], $exercise->hints ?? []),
             'choices' => $exercise->choices->map(fn ($c) => ['body' => $c->body, 'is_correct' => $c->is_correct, 'explanation' => (string) $c->explanation])->all(),
             'primaryDatasetId' => $exercise->datasets->firstWhere('pivot.role', DatasetRole::Primary->value)?->id,
@@ -221,6 +232,10 @@ class ExerciseEditor extends Component
                     $validator->errors()->add('choices', 'Cochez au moins une bonne réponse.');
                 }
 
+                if ($this->strategy === ValidationStrategy::QueryPlan->value && $this->parseList($this->indexTables) === []) {
+                    $validator->errors()->add('indexTables', 'Indiquez au moins une table qui doit être atteinte par un index.');
+                }
+
                 if ($this->strategy === ValidationStrategy::StateCheck->value && $this->parseCheckQueries() === []) {
                     $validator->errors()->add('checkQueries', 'Une validation par état des données nécessite au moins une requête de contrôle.');
                 }
@@ -243,6 +258,7 @@ class ExerciseEditor extends Component
             'allowedStatements' => ['array', 'min:1'],
             'allowedStatements.*' => [Rule::in(['select', 'dml', 'ddl', 'routine'])],
             'floatTolerance' => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'maxStatements' => ['nullable', 'integer', 'between:1,50'],
             'hints.*.text' => ['required', 'string', 'max:1000'],
             'hints.*.xp_penalty' => ['required', 'integer', 'min:0', 'max:500'],
             'choices' => $isMcq ? ['array', 'min:2'] : ['array'],
@@ -360,12 +376,23 @@ class ExerciseEditor extends Component
 
         return array_filter([
             'allowed_statements' => array_values($this->allowedStatements),
+            'max_statements' => $this->maxStatements,
             'required_keywords' => $keywords($this->requiredKeywords),
             'forbidden_keywords' => $keywords($this->forbiddenKeywords),
             'float_tolerance' => $this->floatTolerance !== null && $this->floatTolerance !== '' ? (float) $this->floatTolerance : null,
             'check_column_names' => $this->checkColumnNames ?: null,
-            'check_queries' => $this->parseCheckQueries() ?: null,
+            'check_queries' => $this->strategy === ValidationStrategy::StateCheck->value ? ($this->parseCheckQueries() ?: null) : null,
+            'plan_query' => $this->strategy === ValidationStrategy::QueryPlan->value && trim($this->planQuery) !== '' ? trim($this->planQuery) : null,
+            'index_tables' => $this->strategy === ValidationStrategy::QueryPlan->value ? $this->parseList($this->indexTables) : null,
         ], fn ($value) => $value !== null && $value !== []);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function parseList(string $list): array
+    {
+        return array_values(array_filter(array_map(fn ($item) => strtolower(trim($item)), explode(',', $list))));
     }
 
     /**
@@ -377,11 +404,11 @@ class ExerciseEditor extends Component
             ->map(fn ($line) => trim($line))
             ->filter()
             ->mapWithKeys(function (string $line, int $i) {
-                [$name, $sql] = str_contains($line, ':') && preg_match('/^[\w-]+\s*:/', $line)
-                    ? array_map('trim', explode(':', $line, 2))
-                    : ['controle_'.($i + 1), $line];
-
-                return [$name => $sql];
+                // « nom: requête » : le nom peut contenir espaces et parenthèses (« salaire_annuel(id) »),
+                // la requête commence par un mot-clé SQL ; sinon toute la ligne est la requête.
+                return preg_match('/^(?<name>[^:]+?)\s*:\s*(?<sql>(?:SELECT|WITH|VALUES|TABLE|CALL|EXPLAIN)\b.*)$/is', $line, $match)
+                    ? [$match['name'] => $match['sql']]
+                    : ['controle_'.($i + 1) => $line];
             })
             ->all();
     }
