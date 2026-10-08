@@ -62,6 +62,8 @@ return [
             'runner_username' => env('SANDBOX_PGSQL_RUNNER_USERNAME', 'andromeda_runner'),
             'runner_password' => env('SANDBOX_PGSQL_RUNNER_PASSWORD', ''),
             'lock_timeout_ms' => (int) env('SANDBOX_PGSQL_LOCK_TIMEOUT_MS', 1000),
+            // Au-delà, les modifications travaillent sur les tables partagées (verrous possibles).
+            'private_copy_max_rows' => (int) env('SANDBOX_PRIVATE_COPY_MAX_ROWS', 50000),
             // Lance le chien de garde des fonctions stockées (Runners/pg-watchdog.php).
             'php_binary' => env('SANDBOX_PHP_BINARY', PHP_BINARY),
             // Utilisé uniquement par `sandbox:setup-pgsql` (sinon le mot de passe est demandé).
@@ -80,6 +82,7 @@ return [
             'runner_username' => env('SANDBOX_MYSQL_RUNNER_USERNAME', 'andromeda_runner'),
             'runner_password' => env('SANDBOX_MYSQL_RUNNER_PASSWORD', ''),
             'lock_timeout_s' => (int) env('SANDBOX_MYSQL_LOCK_TIMEOUT_S', 1),
+            'private_copy_max_rows' => (int) env('SANDBOX_PRIVATE_COPY_MAX_ROWS', 50000),
             'superuser_password' => env('SANDBOX_MYSQL_SUPERUSER_PASSWORD'),
         ],
 

@@ -123,9 +123,11 @@ class PostgresDriver implements SandboxDriver
             $pdo->exec('BEGIN');
             $pdo->exec('SET LOCAL statement_timeout = '.max(1, $timeoutMs));
             $pdo->exec('SET LOCAL lock_timeout = '.(int) $this->config['lock_timeout_ms']);
-            $pdo->exec('SET LOCAL search_path TO '.$this->quoteIdentifier($schema));
+            // pg_temp en dernier : une table temporaire de l'élève ne masque jamais une table du jeu
+            // (sans cette mention, PostgreSQL cherche d'abord dans pg_temp).
+            $pdo->exec('SET LOCAL search_path TO '.$this->quoteIdentifier($schema).', pg_temp');
 
-            $sessionCopies = $this->needsOwnedTables($query);
+            $sessionCopies = $this->needsOwnedTables($query) || $this->needsPrivateCopy($build, $query);
 
             if ($sessionCopies) {
                 $this->copyTablesToSession($pdo, $schema);
@@ -192,6 +194,22 @@ class PostgresDriver implements SandboxDriver
             durationMs: $duration,
             checks: $checks,
         );
+    }
+
+    /**
+     * Modifications et lectures verrouillantes (FOR UPDATE / FOR SHARE) : sur les tables partagées du
+     * build, elles poseraient des verrous qui bloqueraient les autres élèves jusqu'à la fin de
+     * l'exécution. Sur un jeu de taille raisonnable, elles travaillent donc sur une copie privée.
+     */
+    private function needsPrivateCopy(DatasetBuild $build, GuardedQuery $query): bool
+    {
+        $locking = ! $query->isReadOnly();
+
+        foreach ($query->statements as $statement) {
+            $locking = $locking || preg_match('/\bFOR\s+(NO\s+KEY\s+UPDATE|UPDATE|SHARE|KEY\s+SHARE)\b/i', $statement);
+        }
+
+        return $locking && (int) ($build->dataset?->total_rows ?? PHP_INT_MAX) <= (int) ($this->config['private_copy_max_rows'] ?? 50_000);
     }
 
     /**
@@ -419,6 +437,9 @@ class PostgresDriver implements SandboxDriver
         foreach (['pg_cancel_backend(integer)', 'pg_terminate_backend(integer, bigint)'] as $function) {
             $pdo->exec("REVOKE EXECUTE ON FUNCTION {$function} FROM PUBLIC");
         }
+        // Les requêtes en cours des autres sessions (réponses d'autres élèves) ne sont pas lisibles.
+        $pdo->exec('REVOKE SELECT ON pg_catalog.pg_stat_activity FROM PUBLIC');
+        $pdo->exec('REVOKE EXECUTE ON FUNCTION pg_catalog.pg_stat_get_activity(integer) FROM PUBLIC');
         // Le chien de garde coupe les connexions d'exécution trop longues : le compte propriétaire
         // (NOINHERIT) endosse explicitement le rôle pg_signal_backend (SET ROLE) le temps de le faire.
         $pdo->exec('GRANT EXECUTE ON FUNCTION pg_terminate_backend(integer, bigint) TO pg_signal_backend');

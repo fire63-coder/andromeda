@@ -2,8 +2,11 @@
 
 namespace Tests\Feature\Sandbox;
 
+use App\Enums\SubmissionStatus;
 use App\Models\Dataset;
+use App\Models\Exercise;
 use App\Models\SqlDialect;
+use App\Services\Evaluation\SubmissionEvaluator;
 use App\Services\Sandbox\SandboxManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
@@ -100,5 +103,50 @@ class HiddenDatasetIsolationTest extends TestCase
         if ($checked === 0) {
             $this->markTestSkipped('Aucun serveur de sandbox disponible.');
         }
+    }
+
+    #[Test]
+    public function a_temporary_table_cannot_fake_the_state_read_by_control_queries(): void
+    {
+        $pgsql = SqlDialect::where('slug', 'pgsql')->firstOrFail();
+        $exercise = Exercise::where('slug', 'trigger-audit-salaires')->firstOrFail();
+
+        if (! app(SandboxManager::class)->isExecutable($exercise->datasets->first(), $pgsql)) {
+            $this->markTestSkipped('Serveur PostgreSQL de sandbox indisponible.');
+        }
+
+        $result = app(SubmissionEvaluator::class)->evaluate($exercise, $pgsql,
+            'CREATE TEMP TABLE salary_audit AS SELECT id AS employee_id, salary AS old_salary, salary + 100 AS new_salary FROM employees WHERE department_id = 3');
+
+        $this->assertSame(SubmissionStatus::Rejected, $result->status);
+    }
+
+    #[Test]
+    public function modifications_never_wait_for_locks_held_by_other_students(): void
+    {
+        $sandbox = app(SandboxManager::class);
+        $pgsql = SqlDialect::where('slug', 'pgsql')->firstOrFail();
+        $shop = Dataset::where('slug', 'boutique')->firstOrFail();
+
+        if (! $sandbox->isExecutable($shop, $pgsql)) {
+            $this->markTestSkipped('Serveur PostgreSQL de sandbox indisponible.');
+        }
+
+        // Un autre élève tient un verrou sur la ligne 1 de la table partagée…
+        $driver = $sandbox->driver($pgsql);
+        $build = $sandbox->build($shop, $pgsql);
+        $schema = $driver->prepare($build);
+        ['username' => $user, 'password' => $password] = $driver->executionCredentials($build);
+        $config = config('sandbox.drivers.pgsql');
+        $other = new \PDO("pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']}", $user, $password, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]);
+        $other->exec('BEGIN');
+        $other->query('SELECT * FROM "'.$schema.'".products WHERE id = 1 FOR UPDATE')->fetchAll();
+
+        // … la modification de cet élève travaille sur sa copie privée : pas d'attente, pas d'échec.
+        $result = $sandbox->run($shop, $pgsql, 'UPDATE products SET stock = 0 WHERE id = 1', ['allowed_statements' => ['dml']]);
+
+        $other->exec('ROLLBACK');
+        $this->assertTrue($result->success, (string) $result->error);
+        $this->assertSame(1, $result->affectedRows);
     }
 }

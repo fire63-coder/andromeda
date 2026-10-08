@@ -69,7 +69,7 @@ class PostgresSandboxTest extends TestCase
     #[Test]
     public function statement_timeout_is_enforced(): void
     {
-        $result = $this->sandbox->run($this->dataset, $this->pgsql, 'SELECT pg_sleep(2)', timeoutMs: 300);
+        $result = $this->sandbox->run($this->dataset, $this->pgsql, 'SELECT COUNT(*) FROM generate_series(1, 500000000)', timeoutMs: 300);
 
         $this->assertSame(QueryResult::ERROR_TIMEOUT, $result->errorType);
     }

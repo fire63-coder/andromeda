@@ -15,6 +15,9 @@ final readonly class QueryResult
 
     public const ERROR_INTERNAL = 'internal';
 
+    /** Longueur maximale d'une valeur dans un aperçu de résultat. */
+    public const PREVIEW_VALUE_LENGTH = 2000;
+
     /**
      * @param  list<string>  $columns  colonnes du dernier jeu de résultats
      * @param  list<list<mixed>>  $rows  au plus max_rows lignes
@@ -73,7 +76,11 @@ final readonly class QueryResult
         return [
             'success' => $this->success,
             'columns' => $this->columns,
-            'rows' => array_slice($this->rows, 0, $maxRows),
+            // Valeurs tronquées : l'aperçu est envoyé au navigateur et enregistré avec la soumission.
+            'rows' => array_map(
+                fn (array $row) => array_map(fn ($value) => is_string($value) && mb_strlen($value) > self::PREVIEW_VALUE_LENGTH ? mb_substr($value, 0, self::PREVIEW_VALUE_LENGTH).'…' : $value, $row),
+                array_slice($this->rows, 0, $maxRows),
+            ),
             'row_count' => count($this->rows),
             'truncated' => $this->truncated || count($this->rows) > $maxRows,
             'affected_rows' => $this->affectedRows,

@@ -71,7 +71,7 @@ class MysqlDriver implements SandboxDriver
             $runner = $this->literal($owner, $this->config['runner_username']).'@'.$this->literal($owner, '%');
             $owner->query("CREATE ROLE IF NOT EXISTS {$role}");
             // Le nom ne contient ni « _ » ni « % » (jokers de GRANT) : le droit porte sur cette seule base.
-            $owner->query('GRANT SELECT, INSERT, UPDATE, DELETE ON '.$this->quoteIdentifier($database).".* TO {$role}");
+            $owner->query('GRANT SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES ON '.$this->quoteIdentifier($database).".* TO {$role}");
             $owner->query("GRANT {$role} TO {$runner}");
 
             $this->prepared[$database] = true;
@@ -126,6 +126,11 @@ class MysqlDriver implements SandboxDriver
             $conn->query('SET SESSION max_execution_time = '.max(1, $timeoutMs));
             $conn->query('SET SESSION innodb_lock_wait_timeout = '.max(1, $this->config['lock_timeout_s']));
             $conn->query('SET SESSION cte_max_recursion_depth = 1000000');
+
+            if ($this->needsPrivateCopy($build, $query)) {
+                $this->copyTablesToSession($conn, $database);
+            }
+
             $conn->query('START TRANSACTION');
 
             foreach ($query->statements as $index => $statement) {
@@ -164,6 +169,50 @@ class MysqlDriver implements SandboxDriver
             durationMs: $duration,
             checks: $checks,
         );
+    }
+
+    /**
+     * Modifications et lectures verrouillantes (FOR UPDATE, LOCK IN SHARE MODE) : sur un jeu de taille
+     * raisonnable, elles travaillent sur des tables temporaires privées, pour ne jamais verrouiller
+     * les lignes que les autres élèves utilisent.
+     */
+    private function needsPrivateCopy(DatasetBuild $build, GuardedQuery $query): bool
+    {
+        $locking = ! $query->isReadOnly();
+
+        foreach ($query->statements as $statement) {
+            $locking = $locking || preg_match('/\b(FOR\s+(UPDATE|SHARE)|LOCK\s+IN\s+SHARE\s+MODE)\b/i', $statement);
+        }
+
+        return $locking && (int) ($build->dataset?->total_rows ?? PHP_INT_MAX) <= (int) ($this->config['private_copy_max_rows'] ?? 50_000);
+    }
+
+    /**
+     * Une table temporaire du même nom masque la table de la base pour cette connexion seulement.
+     * CREATE TEMPORARY TABLE ne valide pas implicitement la transaction.
+     */
+    private function copyTablesToSession(mysqli $conn, string $database): void
+    {
+        $quotedDatabase = $this->quoteIdentifier($database);
+        $tables = $conn->query("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' ORDER BY TABLE_NAME")->fetch_all();
+
+        foreach ($tables as [$table]) {
+            $quotedTable = $this->quoteIdentifier($table);
+            $columns = implode(', ', array_map(fn (array $row) => $this->quoteIdentifier($row[0]), $conn->query(
+                'SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '.$this->literal($conn, $table)
+                ." AND GENERATION_EXPRESSION = '' ORDER BY ORDINAL_POSITION",
+            )->fetch_all()));
+
+            // MySQL refuse « CREATE TEMPORARY TABLE t LIKE base.t » (même nom), et renommer une table
+            // temporaire exigerait le droit CREATE : on passe par une table intermédiaire, dont la
+            // table finale copie la structure (clés et index compris).
+            $staging = $this->quoteIdentifier('__copie_'.$table);
+            $conn->query("CREATE TEMPORARY TABLE {$staging} LIKE {$quotedDatabase}.{$quotedTable}");
+            $conn->query("INSERT INTO {$staging} ({$columns}) SELECT {$columns} FROM {$quotedDatabase}.{$quotedTable}");
+            $conn->query("CREATE TEMPORARY TABLE {$quotedTable} LIKE {$staging}");
+            $conn->query("INSERT INTO {$quotedTable} ({$columns}) SELECT {$columns} FROM {$staging}");
+            $conn->query("DROP TEMPORARY TABLE {$staging}");
+        }
     }
 
     public function supportsRoutines(): bool
@@ -222,7 +271,7 @@ class MysqlDriver implements SandboxDriver
         // Le propriétaire crée un rôle par base et l'accorde au compte d'exécution, qui n'a aucun droit
         // direct sur les bases de la sandbox. CREATE ROLE / DROP ROLE ne concernent que des comptes
         // verrouillés (des rôles) ; ROLE_ADMIN permet d'accorder ces rôles.
-        $root->query("GRANT CREATE, DROP, ALTER, INDEX, REFERENCES, SELECT, INSERT, UPDATE, DELETE ON {$pattern} TO {$owner} WITH GRANT OPTION");
+        $root->query("GRANT CREATE, DROP, ALTER, INDEX, REFERENCES, SELECT, INSERT, UPDATE, DELETE, CREATE TEMPORARY TABLES ON {$pattern} TO {$owner} WITH GRANT OPTION");
         $root->query("GRANT CREATE ROLE, DROP ROLE ON *.* TO {$owner}");
         $root->query("GRANT ROLE_ADMIN ON *.* TO {$owner}");
 

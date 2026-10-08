@@ -241,4 +241,86 @@ class QueryGuardTest extends TestCase
         $this->expectExceptionMessage("n'accepte que");
         $this->guard->inspect('EXPLAIN ANALYZE DELETE FROM t');
     }
+
+    /**
+     * Requêtes que le lexer et le moteur liraient différemment (contournements confirmés en revue).
+     *
+     * @return array<string, array{0: string}>
+     */
+    public static function ambiguousQueries(): array
+    {
+        return [
+            'antislash MySQL' => ["SELECT 'a\\'' , SLEEP(2) , ''"],
+            'guillemets MySQL' => ['SELECT "a\\"" , SLEEP(2) , ""'],
+            'chaîne E PostgreSQL' => ["SELECT E'a\\'' , pg_sleep_for('2 s') , ''"],
+            '-- sans espace' => ["SELECT 1 --SLEEP(2)\n"],
+            'dièse MySQL' => ["SELECT 1 # '\n, SLEEP(2) -- '"],
+            'commentaire exécutable' => ['SELECT 1 /*! , SLEEP(2) */'],
+            'indication optimiseur' => ['SELECT /*+ MAX_EXECUTION_TIME(0) */ 1'],
+            'commentaire imbriqué' => ["SELECT 1 /* /* */ ' */ , pg_sleep_for('2 s') --'"],
+            'commentaire non fermé' => ['SELECT 1 /* fin'],
+            'chaîne non fermée' => ["SELECT 'abc"],
+            'dollar hors fonction' => ['SELECT 1 AS $$, SLEEP(2) AS $$'],
+            'échappements Unicode' => ['SELECT U&"pg\\005fsleep"(1)'],
+            'pg_sleep' => ['SELECT pg_sleep(10)'],
+            'requêtes des autres (MySQL)' => ['SELECT INFO FROM information_schema.PROCESSLIST'],
+            'requêtes des autres (PostgreSQL)' => ['SELECT query FROM "pg_stat_activity"'],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('ambiguousQueries')]
+    public function ambiguous_or_spying_queries_are_rejected(string $sql): void
+    {
+        $this->expectException(QueryRejected::class);
+
+        $this->guard->inspect($sql);
+    }
+
+    #[Test]
+    public function ordinary_strings_comments_and_backslashes_are_still_accepted(): void
+    {
+        foreach ([
+            "SELECT 'l''apostrophe' -- commentaire\nFROM t",
+            "SELECT name FROM t WHERE name LIKE '%\\_%' /* bloc */",
+            "SELECT 'C:\\\\dossier\\\\' AS chemin",
+            'SELECT "colonne" FROM t',
+        ] as $sql) {
+            $this->assertSame([StatementKind::Select], $this->guard->inspect($sql)->kinds, $sql);
+        }
+    }
+
+    #[Test]
+    public function graded_exercises_cannot_replace_dataset_tables(): void
+    {
+        $options = ['allowed_statements' => ['ddl', 'dml'], 'max_statements' => 5, 'protected_tables' => ['salary_audit', 'employees']];
+
+        foreach ([
+            'CREATE TEMP TABLE salary_audit AS SELECT 1',
+            'CREATE TEMPORARY VIEW x AS SELECT 1',
+            'DROP TABLE IF EXISTS salary_audit',
+            'DROP TABLE "employees"',
+            'ALTER TABLE employees RENAME TO e2',
+        ] as $sql) {
+            try {
+                $this->guard->inspect($sql, $options);
+                $this->fail("Accepté : {$sql}");
+            } catch (QueryRejected) {
+                $this->addToAssertionCount(1);
+            }
+        }
+
+        // Le DDL ordinaire reste permis.
+        $this->guard->inspect('CREATE INDEX ix ON employees (manager_id); ALTER TABLE employees ADD COLUMN prime numeric; CREATE TABLE notes (x int)', $options);
+    }
+
+    #[Test]
+    public function dataset_scripts_only_reject_backslash_escapes_for_mysql(): void
+    {
+        $script = "CREATE TABLE t (x TEXT); INSERT INTO t VALUES ('a\\''b')";
+
+        $this->guard->inspectScript($script, 'pgsql');
+        $this->expectException(QueryRejected::class);
+        $this->guard->inspectScript($script, 'mysql');
+    }
 }

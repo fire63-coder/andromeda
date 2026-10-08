@@ -53,7 +53,7 @@ class DatasetBuild extends Model
         ]));
 
         try {
-            app(QueryGuard::class)->inspectScript($script);
+            app(QueryGuard::class)->inspectScript($script, $this->dialect?->slug);
         } catch (QueryRejected $e) {
             throw new SandboxUnavailable("Le script du jeu de données est refusé : {$e->getMessage()}", previous: $e);
         }

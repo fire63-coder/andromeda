@@ -205,10 +205,27 @@ class SubmissionEvaluator
             $dataset,
             $dialect,
             $sql,
-            array_intersect_key($options, array_flip(self::GUARD_OPTIONS)),
+            $this->guardOptions($exercise, $dataset),
             $exercise->max_execution_ms,
             $exercise->validation_strategy === ValidationStrategy::StateCheck ? ($options['check_queries'] ?? []) : [],
         );
+    }
+
+    /**
+     * Garde-fous de l'exercice, plus les tables du jeu de données à protéger : un élève ne doit pas
+     * pouvoir les supprimer, les renommer ou les masquer par une table temporaire fabriquée, que les
+     * requêtes de contrôle liraient à la place.
+     *
+     * @return array<string, mixed>
+     */
+    private function guardOptions(Exercise $exercise, Dataset $dataset): array
+    {
+        $options = $exercise->validation_options ?? [];
+
+        return [
+            ...array_intersect_key($options, array_flip(self::GUARD_OPTIONS)),
+            'protected_tables' => ($options['allow_table_replacement'] ?? false) ? [] : array_column($dataset->tables_meta ?? [], 'name'),
+        ];
     }
 
     /**
@@ -315,7 +332,7 @@ class SubmissionEvaluator
             $dataset,
             $dialect,
             $sql,
-            array_intersect_key($options, array_flip(self::GUARD_OPTIONS)),
+            $this->guardOptions($exercise, $dataset),
             $exercise->max_execution_ms,
             $this->plans->checkQueries($dialect, $planQuery),
         );

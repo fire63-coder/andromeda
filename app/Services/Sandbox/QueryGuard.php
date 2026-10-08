@@ -29,6 +29,9 @@ class QueryGuard
         'PG_RELOAD_CONF', 'PG_ADVISORY_LOCK', 'PG_ADVISORY_XACT_LOCK',
         'OUTFILE', 'DUMPFILE', 'LOAD_FILE', 'XP_CMDSHELL', 'OPENROWSET', 'UTL_FILE',
         'SLEEP', 'BENCHMARK', 'GET_LOCK', 'RELEASE_LOCK', 'RELEASE_ALL_LOCKS',
+        'PG_SLEEP', 'PG_SLEEP_UNTIL',
+        // Requêtes en cours des autres sessions : elles contiendraient les réponses des autres élèves.
+        'PROCESSLIST', 'PG_STAT_ACTIVITY', 'PG_STAT_GET_ACTIVITY',
     ];
 
     /** Objets dont la création est refusée même quand le DDL est autorisé. */
@@ -87,6 +90,8 @@ class QueryGuard
             throw new QueryRejected('La requête est trop longue.');
         }
 
+        $this->checkAmbiguities($sql, strictBackslashes: true);
+
         $statements = $this->lexer->statements($sql);
 
         if ($statements === []) {
@@ -131,8 +136,124 @@ class QueryGuard
 
         $this->transactionsAllowed = false;
         $this->checkRequiredAndForbidden($allWords, $options);
+        $this->checkProtectedTables($sql, $options['protected_tables'] ?? []);
 
         return new GuardedQuery($statements, $kinds);
+    }
+
+    /**
+     * Refuse ce que le lexer et le moteur pourraient lire différemment : un mot interdit,
+     * un « ; » ou une instruction que le garde croit dans une chaîne ou un commentaire
+     * serait exécuté par le serveur.
+     *
+     * - antislash devant une apostrophe ou un guillemet (échappement MySQL, chaînes E'' de PostgreSQL) ;
+     * - commentaires imbriqués (PostgreSQL), exécutables « /*! » et indications « /*+ » (MySQL) ;
+     * - « -- » non suivi d'un espace (pas un commentaire pour MySQL), « # » (commentaire MySQL) ;
+     * - chaîne, identifiant ou commentaire non refermé.
+     *
+     * @param  bool  $strictBackslashes  faux pour un script destiné à un moteur sans échappement par antislash
+     *
+     * @throws QueryRejected
+     */
+    public function checkAmbiguities(string $sql, bool $strictBackslashes = true): void
+    {
+        $previous = null;
+
+        foreach ($this->lexer->tokens($sql) as [$type, $value]) {
+            if ($type === 'comment' && str_starts_with($value, '--')) {
+                $next = substr($value, 2, 1);
+
+                if ($next !== '' && ! ctype_space($next)) {
+                    throw new QueryRejected('Un commentaire « -- » doit être suivi d\'un espace.');
+                }
+            } elseif ($type === 'comment') {
+                if (str_starts_with($value, '/*!') || str_starts_with($value, '/*+')) {
+                    throw new QueryRejected('Les commentaires exécutables « /*! … */ » et les indications « /*+ … */ » ne sont pas acceptés.');
+                }
+
+                if (strlen($value) < 4 || ! str_ends_with($value, '*/')) {
+                    throw new QueryRejected('Un commentaire « /* » n\'est pas refermé.');
+                }
+
+                if (str_contains(substr($value, 2, -2), '/*')) {
+                    throw new QueryRejected('Les commentaires imbriqués ne sont pas acceptés.');
+                }
+            } elseif (($type === 'string' && $value[0] === "'") || ($type === 'quoted' && $value[0] === '"')) {
+                $quote = $value[0];
+
+                if (! preg_match('/^'.$quote.'(?:[^'.$quote.']|'.$quote.$quote.')*'.$quote.'$/s', $value)) {
+                    throw new QueryRejected('Une chaîne ou un identifiant entre '.$quote.' n\'est pas refermé.');
+                }
+
+                // E'…' (PostgreSQL) interprète toujours les antislashs, MySQL aussi dans ses chaînes.
+                if (($strictBackslashes || $previous === 'E') && preg_match('/(?<!\\\\)(?:\\\\\\\\)*\\\\'.$quote.'/', substr($value, 1, -1))) {
+                    throw new QueryRejected("L'échappement par antislash (\\{$quote}) n'est pas accepté : doublez le caractère ({$quote}{$quote}).");
+                }
+            } elseif ($type === 'string' && $value[0] === '$') {
+                preg_match('/^\$([A-Za-z_][A-Za-z0-9_]*)?\$/', $value, $tag);
+
+                if (strlen($value) < 2 * strlen($tag[0]) || ! str_ends_with($value, $tag[0])) {
+                    throw new QueryRejected('Une chaîne '.$tag[0].' n\'est pas refermée.');
+                }
+            } elseif ($type === 'quoted' && (($value[0] === '`' && (strlen($value) < 2 || ! str_ends_with($value, '`'))) || ($value[0] === '[' && ! str_ends_with($value, ']')))) {
+                throw new QueryRejected('Un identifiant délimité n\'est pas refermé.');
+            } elseif ($type === 'symbol' && $value === '#') {
+                throw new QueryRejected('Le caractère « # » n\'est pas accepté en dehors des chaînes.');
+            } elseif ($type === 'symbol' && $value === '&' && $previous === 'U') {
+                // U&"pg\005fsleep" : un identifiant en échappements Unicode cacherait un nom interdit.
+                throw new QueryRejected('Les chaînes et identifiants en échappements Unicode (U&…) ne sont pas acceptés.');
+            }
+
+            $previous = match ($type) {
+                'word' => strtoupper($value),
+                'space', 'comment' => null,
+                default => $previous === 'U' && $value === '&' ? 'U&' : null,
+            };
+        }
+    }
+
+    /**
+     * Tables du jeu de données qu'un exercice corrigé ne doit ni supprimer, ni renommer, ni masquer
+     * par un objet temporaire : sinon les requêtes de contrôle liraient une table fabriquée par l'élève.
+     *
+     * @param  list<string>  $tables
+     *
+     * @throws QueryRejected
+     */
+    private function checkProtectedTables(string $sql, array $tables): void
+    {
+        if ($tables === []) {
+            return;
+        }
+
+        $protected = array_map('strtolower', $tables);
+        $names = [];
+
+        foreach ($this->lexer->tokens($sql) as [$type, $value]) {
+            if ($type === 'word') {
+                $names[] = strtolower($value);
+            } elseif ($type === 'quoted') {
+                $names[] = strtolower(substr($value, 1, -1));
+            } elseif ($type === 'symbol' && $value === ';') {
+                $names[] = ';';
+            }
+        }
+
+        foreach ($names as $i => $word) {
+            $next = array_slice($names, $i + 1, 4);
+
+            if ($word === 'create' && array_intersect(['temp', 'temporary'], array_slice($next, 0, 3)) !== []) {
+                throw new QueryRejected('Les tables et vues temporaires ne sont pas acceptées dans un exercice corrigé.');
+            }
+
+            if (in_array($word, ['drop', 'alter', 'rename'], true)) {
+                $target = array_values(array_diff($next, ['table', 'view', 'materialized', 'if', 'exists', 'only']))[0] ?? null;
+
+                if (in_array($target, $protected, true) && ($word !== 'alter' || in_array('rename', array_slice($names, $i + 2, 4), true))) {
+                    throw new QueryRejected("La table « {$target} » du jeu de données ne peut pas être supprimée ou renommée dans cet exercice.");
+                }
+            }
+        }
     }
 
     /**
@@ -141,9 +262,11 @@ class QueryGuard
      *
      * @throws QueryRejected
      */
-    public function inspectScript(string $sql): void
+    public function inspectScript(string $sql, ?string $dialect = null): void
     {
         $this->transactionsAllowed = false;
+        // Les scripts générés pour MySQL doublent les antislashs ; ailleurs, l'antislash est un caractère ordinaire.
+        $this->checkAmbiguities($sql, strictBackslashes: $dialect === 'mysql');
 
         foreach ($this->lexer->statements($sql) as $statement) {
             // Le script est chargé par le compte propriétaire : pas de code stocké qui s'exécuterait avec ses droits.
@@ -179,6 +302,13 @@ class QueryGuard
             $this->checkRoutine($words, $statement);
 
             return StatementKind::Routine;
+        }
+
+        // Hors d'un corps de fonction, « $$ » n'est une chaîne que pour PostgreSQL (MySQL y voit un identifiant).
+        foreach ($this->lexer->tokens($statement) as [$type, $value]) {
+            if ($type === 'string' && $value[0] === '$') {
+                throw new QueryRejected('Les chaînes $$ … $$ ne sont acceptées que dans le corps d\'une fonction ou procédure.');
+            }
         }
 
         if (in_array($first, self::DDL_WORDS, true)) {
