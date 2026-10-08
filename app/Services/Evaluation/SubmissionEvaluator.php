@@ -11,8 +11,10 @@ use App\Models\Exercise;
 use App\Models\SqlDialect;
 use App\Models\User;
 use App\Services\Evaluation\Comparators\ResultSetComparator;
+use App\Services\Sandbox\Exceptions\QueryRejected;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\Scenario\ScenarioParser;
 use App\Services\Sandbox\SqlLexer;
 use Illuminate\Support\Collection;
 
@@ -44,6 +46,10 @@ class SubmissionEvaluator
             return QueryResult::failure('Cet exercice n\'a pas de jeu de données.', QueryResult::ERROR_INTERNAL);
         }
 
+        if ($exercise->validation_strategy === ValidationStrategy::Concurrency) {
+            return $this->runScenario($exercise, $dataset, $dialect, $sql);
+        }
+
         return $this->runStudent($exercise, $dataset, $dialect, $sql);
     }
 
@@ -66,6 +72,10 @@ class SubmissionEvaluator
 
         if ($datasets->isEmpty()) {
             return $this->misconfigured('aucun jeu de données lié');
+        }
+
+        if ($exercise->validation_strategy === ValidationStrategy::Concurrency) {
+            return $this->evaluateScenario($exercise, $dialect, $sql, $datasets);
         }
 
         $planQuery = $exercise->validation_options['plan_query'] ?? null;
@@ -150,6 +160,7 @@ class SubmissionEvaluator
         $needsDdl = in_array('ddl', $exercise->validation_options['allowed_statements'] ?? [], true);
         $needsRoutines = in_array('routine', $exercise->validation_options['allowed_statements'] ?? [], true);
         $needsPlans = $exercise->validation_strategy === ValidationStrategy::QueryPlan;
+        $needsScenarios = $exercise->validation_strategy === ValidationStrategy::Concurrency;
 
         return SqlDialect::query()
             ->executable()
@@ -160,7 +171,8 @@ class SubmissionEvaluator
                 fn (Dataset $dataset) => $this->sandbox->isExecutable($dataset, $dialect),
             ) && (! $needsDdl || $this->sandbox->driver($dialect)->supportsDdl())
                 && (! $needsRoutines || $this->sandbox->driver($dialect)->supportsRoutines())
-                && (! $needsPlans || $this->plans->supports($dialect)))
+                && (! $needsPlans || $this->plans->supports($dialect))
+                && (! $needsScenarios || $this->sandbox->supportsScenarios($dialect)))
             ->values();
     }
 
@@ -196,6 +208,98 @@ class SubmissionEvaluator
             array_intersect_key($options, array_flip(self::GUARD_OPTIONS)),
             $exercise->max_execution_ms,
             $exercise->validation_strategy === ValidationStrategy::StateCheck ? ($options['check_queries'] ?? []) : [],
+        );
+    }
+
+    /**
+     * Scénario de concurrence : même entrelacement des sessions que la solution, puis, sur chaque
+     * jeu de données, mêmes résultats aux étapes comparées et même état final que la solution.
+     *
+     * @param  Collection<int, Dataset>  $datasets
+     */
+    private function evaluateScenario(Exercise $exercise, SqlDialect $dialect, string $sql, Collection $datasets): EvaluationResult
+    {
+        $options = $exercise->validation_options ?? [];
+        $parser = app(ScenarioParser::class);
+
+        try {
+            $expectedOrder = ScenarioParser::interleaving($parser->parse((string) $exercise->solution_sql));
+            $actualOrder = ScenarioParser::interleaving($parser->parse($sql, $options));
+        } catch (QueryRejected $e) {
+            return new EvaluationResult(SubmissionStatus::Rejected, 0, $e->getMessage());
+        }
+
+        if ($actualOrder !== $expectedOrder) {
+            return new EvaluationResult(SubmissionStatus::Rejected, 0,
+                "L'enchaînement des sessions doit rester celui de l'énoncé (".implode(' → ', str_split($expectedOrder)).'). '
+                .'Modifiez le contenu des étapes, pas leur ordre : c\'est l\'entrelacement qui crée le problème à résoudre.');
+        }
+
+        $primaryResult = null;
+
+        foreach ($datasets as $index => $dataset) {
+            $actual = $this->runScenario($exercise, $dataset, $dialect, $sql);
+            $primaryResult ??= $actual;
+
+            if (! $actual->success) {
+                return new EvaluationResult($this->statusForError($actual), 0, $actual->error, result: $primaryResult);
+            }
+
+            $expected = $this->runScenario($exercise, $dataset, $dialect, (string) $exercise->solution_sql);
+
+            if (! $expected->success) {
+                return $this->misconfigured('le scénario de référence ne s\'exécute pas', $primaryResult);
+            }
+
+            if ($options['no_errors'] ?? false) {
+                foreach ($actual->timeline as $step) {
+                    if ($step['error'] !== null) {
+                        return new EvaluationResult(SubmissionStatus::Wrong, 0,
+                            "L'étape {$step['step']} (session {$step['session']}) échoue : ".strtok($step['error'], "\n")
+                            .'. Toutes les transactions doivent aboutir.', ['step' => $step['step']], $primaryResult);
+                    }
+                }
+            }
+
+            foreach ($options['compare_steps'] ?? [] as $number) {
+                $mine = $actual->timeline[$number - 1] ?? null;
+                $reference = $expected->timeline[$number - 1] ?? null;
+                $comparison = $this->comparator->compare(
+                    ['columns' => $mine['columns'] ?? [], 'rows' => $mine['rows'] ?? []],
+                    ['columns' => $reference['columns'] ?? [], 'rows' => $reference['rows'] ?? []],
+                    true,
+                    $options,
+                );
+
+                if (! $comparison->matches || ($mine['error'] ?? null) !== null) {
+                    return new EvaluationResult(SubmissionStatus::Wrong, 0,
+                        "À l'étape {$number} (session {$reference['session']}), le résultat n'est pas celui attendu. "
+                        .(($mine['error'] ?? null) ? 'Elle échoue : '.strtok($mine['error'], "\n") : $comparison->message),
+                        ['step' => $number], $primaryResult);
+                }
+            }
+
+            $comparison = $this->compareChecks($actual, $expected, $options);
+
+            if (! $comparison->matches) {
+                return new EvaluationResult(SubmissionStatus::Wrong, $index === 0 ? 0 : 50, $comparison->message, $comparison->details, $primaryResult);
+            }
+        }
+
+        return new EvaluationResult(SubmissionStatus::Correct, 100, 'Bravo ! Les transactions se déroulent correctement, même entrelacées.', result: $primaryResult);
+    }
+
+    private function runScenario(Exercise $exercise, Dataset $dataset, SqlDialect $dialect, string $sql): QueryResult
+    {
+        $options = $exercise->validation_options ?? [];
+
+        return $this->sandbox->runScenario(
+            $dataset,
+            $dialect,
+            $sql,
+            array_intersect_key($options, array_flip(['required_keywords', 'forbidden_keywords'])),
+            $exercise->max_execution_ms,
+            $options['check_queries'] ?? [],
         );
     }
 
@@ -261,6 +365,14 @@ class SubmissionEvaluator
             );
         }
 
+        return $this->compareChecks($actual, $expected, $options);
+    }
+
+    /**
+     * @param  array<string, mixed>  $options
+     */
+    private function compareChecks(QueryResult $actual, QueryResult $expected, array $options): Comparison
+    {
         foreach ($expected->checks as $name => $expectedCheck) {
             $comparison = $this->comparator->compare($actual->checks[$name] ?? ['columns' => [], 'rows' => []], $expectedCheck, true, $options);
 

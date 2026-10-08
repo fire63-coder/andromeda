@@ -75,6 +75,11 @@ class ExerciseEditor extends Component
 
     public string $indexTables = '';
 
+    /** Scénario de concurrence : étapes dont le résultat doit égaler celui de la solution, et refus de toute erreur. */
+    public string $compareSteps = '';
+
+    public bool $noErrors = false;
+
     /** @var list<array{text: string, xp_penalty: int|string}> */
     public array $hints = [];
 
@@ -138,6 +143,8 @@ class ExerciseEditor extends Component
             'checkQueries' => collect($options['check_queries'] ?? [])->map(fn ($sql, $name) => "{$name}: {$sql}")->implode("\n"),
             'planQuery' => (string) ($options['plan_query'] ?? ''),
             'indexTables' => implode(', ', $options['index_tables'] ?? []),
+            'compareSteps' => implode(', ', $options['compare_steps'] ?? []),
+            'noErrors' => (bool) ($options['no_errors'] ?? false),
             'hints' => array_map(fn (array $hint) => ['text' => $hint['text'], 'xp_penalty' => $hint['xp_penalty'] ?? 0], $exercise->hints ?? []),
             'choices' => $exercise->choices->map(fn ($c) => ['body' => $c->body, 'is_correct' => $c->is_correct, 'explanation' => (string) $c->explanation])->all(),
             'primaryDatasetId' => $exercise->datasets->firstWhere('pivot.role', DatasetRole::Primary->value)?->id,
@@ -412,7 +419,11 @@ class ExerciseEditor extends Component
             'forbidden_keywords' => $keywords($this->forbiddenKeywords),
             'float_tolerance' => $this->floatTolerance !== null && $this->floatTolerance !== '' ? (float) $this->floatTolerance : null,
             'check_column_names' => $this->checkColumnNames ?: null,
-            'check_queries' => $this->strategy === ValidationStrategy::StateCheck->value ? ($this->parseCheckQueries() ?: null) : null,
+            'check_queries' => in_array($this->strategy, [ValidationStrategy::StateCheck->value, ValidationStrategy::Concurrency->value], true) ? ($this->parseCheckQueries() ?: null) : null,
+            'compare_steps' => $this->strategy === ValidationStrategy::Concurrency->value
+                ? array_values(array_unique(array_filter(array_map('intval', explode(',', $this->compareSteps)), fn (int $n) => $n > 0)))
+                : null,
+            'no_errors' => $this->strategy === ValidationStrategy::Concurrency->value && $this->noErrors ? true : null,
             'plan_query' => $this->strategy === ValidationStrategy::QueryPlan->value && trim($this->planQuery) !== '' ? trim($this->planQuery) : null,
             'index_tables' => $this->strategy === ValidationStrategy::QueryPlan->value ? $this->parseList($this->indexTables) : null,
         ], fn ($value) => $value !== null && $value !== []);

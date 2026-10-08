@@ -19,6 +19,7 @@ final readonly class QueryResult
      * @param  list<string>  $columns  colonnes du dernier jeu de résultats
      * @param  list<list<mixed>>  $rows  au plus max_rows lignes
      * @param  array<string, array{columns: list<string>, rows: list<list<mixed>>}>  $checks  résultats des requêtes de contrôle (state_check)
+     * @param  list<array<string, mixed>>  $timeline  scénario de concurrence : une entrée par étape (voir PostgresScenarioRunner)
      */
     public function __construct(
         public bool $success,
@@ -30,6 +31,7 @@ final readonly class QueryResult
         public ?string $error = null,
         public ?string $errorType = null,
         public array $checks = [],
+        public array $timeline = [],
     ) {}
 
     public static function failure(string $error, string $type = self::ERROR_SQL, int $durationMs = 0): self
@@ -52,6 +54,7 @@ final readonly class QueryResult
             error: $payload['error'] ?? null,
             errorType: $payload['error_type'] ?? null,
             checks: $payload['checks'] ?? [],
+            timeline: $payload['timeline'] ?? [],
         );
     }
 
@@ -77,6 +80,7 @@ final readonly class QueryResult
             'duration_ms' => $this->durationMs,
             'error' => $this->error,
             'error_type' => $this->errorType,
+            'timeline' => $this->timeline,
         ];
     }
 }

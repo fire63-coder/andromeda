@@ -12,6 +12,7 @@ enum ValidationStrategy: string
     case StateCheck = 'state_check';
     case Choices = 'choices';
     case QueryPlan = 'query_plan';
+    case Concurrency = 'concurrency';
 
     public function label(): string
     {
@@ -21,6 +22,7 @@ enum ValidationStrategy: string
             self::StateCheck => 'État des tables après exécution (DML/DDL)',
             self::Choices => 'Réponses de QCM',
             self::QueryPlan => 'Plan d\'exécution (recherche par index)',
+            self::Concurrency => 'Scénario de concurrence (sessions A / B)',
         };
     }
 

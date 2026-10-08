@@ -14,6 +14,7 @@ use App\Services\Datasets\SchemaIntrospector;
 use App\Services\Learning\CourseProgress;
 use App\Services\Sandbox\QueryResult;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\Scenario\ScenarioParser;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
@@ -73,6 +74,7 @@ class LessonViewer extends Component
             ($message = $this->sandboxThrottled()) !== null => QueryResult::failure($message, QueryResult::ERROR_REJECTED),
             ! $this->lesson->dataset || ! $dialect => QueryResult::failure('Aucun jeu de données exécutable pour cette leçon.', QueryResult::ERROR_INTERNAL),
             // Les exemples peuvent illustrer des modifications : elles sont toujours annulées.
+            ScenarioParser::isScenario($this->snippets[$index]) => $sandbox->runScenario($this->lesson->dataset, $dialect, $this->snippets[$index]),
             default => $sandbox->run($this->lesson->dataset, $dialect, $this->snippets[$index], LessonRenderer::SNIPPET_GUARD),
         };
 

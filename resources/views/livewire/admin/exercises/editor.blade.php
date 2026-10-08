@@ -202,7 +202,23 @@
             <label class="flex items-center gap-2 self-end text-sm text-gray-700 dark:text-gray-300">
                 <input type="checkbox" wire:model="checkColumnNames" class="rounded border-gray-300 text-indigo-600"> Noms de colonnes imposés
             </label>
-            @if ($strategy === 'state_check')
+            @if ($strategy === 'concurrency')
+                <div class="sm:col-span-2 lg:col-span-3 grid gap-3 sm:grid-cols-2">
+                    <p class="text-xs text-gray-500 sm:col-span-2">
+                        Le code de départ et la solution sont des scénarios : chaque étape commence par une ligne <code>-- A</code> ou <code>-- B</code>.
+                        L'élève doit garder le même enchaînement de sessions que la solution. PostgreSQL uniquement.
+                    </p>
+                    <div>
+                        <label class="{{ $label }}" for="compareSteps">Étapes dont le résultat doit égaler la solution (ex. 3, 5)</label>
+                        <input id="compareSteps" type="text" wire:model="compareSteps" class="{{ $input }}">
+                    </div>
+                    <label class="mt-6 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                        <input type="checkbox" wire:model="noErrors" class="rounded border-gray-300 text-indigo-600">
+                        Aucune étape ne doit échouer (interblocage, sérialisation…)
+                    </label>
+                </div>
+            @endif
+            @if (in_array($strategy, ['state_check', 'concurrency'], true))
                 <div class="sm:col-span-2 lg:col-span-3">
                     <label class="{{ $label }}" for="checks">Requêtes de contrôle (une par ligne : <code>nom: SELECT …</code>)</label>
                     <textarea id="checks" wire:model="checkQueries" rows="3" class="{{ $mono }}"></textarea>

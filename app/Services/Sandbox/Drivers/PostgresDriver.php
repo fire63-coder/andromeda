@@ -7,6 +7,7 @@ use App\Services\Sandbox\Contracts\SandboxDriver;
 use App\Services\Sandbox\Exceptions\SandboxUnavailable;
 use App\Services\Sandbox\GuardedQuery;
 use App\Services\Sandbox\QueryResult;
+use App\Services\Sandbox\Scenario\PostgresScenarioRunner;
 use App\Services\Sandbox\SqlLexer;
 use App\Services\Sandbox\StatementKind;
 use PDO;
@@ -215,6 +216,41 @@ class PostgresDriver implements SandboxDriver
     public function supportsDdl(): bool
     {
         return true; // DDL transactionnel.
+    }
+
+    /**
+     * Scénario de concurrence (plusieurs sessions entrelacées) sur une copie jetable du build.
+     *
+     * @param  list<array{session: string, sql: string, statements: list<string>}>  $steps
+     * @param  array<string, string>  $checkQueries
+     */
+    public function runScenario(DatasetBuild $build, array $steps, array $checkQueries, int $timeoutMs): QueryResult
+    {
+        $schema = $this->prepare($build);
+
+        return (new PostgresScenarioRunner($this->config, fn (string $user, string $password) => $this->connect($user, $password)))
+            ->run($schema, $steps, $checkQueries, $timeoutMs);
+    }
+
+    /**
+     * Supprime les copies de scénario orphelines (« sc_<horodatage>_… ») plus anciennes que le délai.
+     */
+    public function purgeScenarioSchemas(int $olderThanSeconds = 600): int
+    {
+        $pdo = $this->connect($this->config['owner_username'], $this->config['owner_password']);
+        $prefix = ($this->config['schema_prefix'] ?? '').'sc_';
+        $dropped = 0;
+
+        foreach ($pdo->query('SELECT nspname FROM pg_namespace WHERE starts_with(nspname, '.$pdo->quote($prefix).')')->fetchAll(PDO::FETCH_COLUMN) as $schema) {
+            $createdAt = (int) explode('_', substr($schema, strlen($prefix)))[0];
+
+            if ($createdAt > 0 && $createdAt < time() - $olderThanSeconds) {
+                $pdo->exec('DROP SCHEMA IF EXISTS '.$this->quoteIdentifier($schema).' CASCADE');
+                $dropped++;
+            }
+        }
+
+        return $dropped;
     }
 
     public function supportsRoutines(): bool

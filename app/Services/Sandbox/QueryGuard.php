@@ -52,6 +52,22 @@ class QueryGuard
      */
     private const FORBIDDEN_CONDITIONS = ['QUERY_CANCELED', 'ADMIN_SHUTDOWN', 'CRASH_SHUTDOWN', 'CANNOT_CONNECT_NOW', 'OPERATOR_INTERVENTION'];
 
+    /**
+     * Contrôle de transaction, permis uniquement dans les scénarios de concurrence
+     * (StatementKind::Transaction), et seulement sous ces formes exactes.
+     */
+    private const TRANSACTION_PATTERNS = [
+        '/^(BEGIN|START\s+TRANSACTION)(\s+(WORK|TRANSACTION))?(\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ|READ\s+COMMITTED|READ\s+UNCOMMITTED))?(\s+READ\s+(ONLY|WRITE))?$/i',
+        '/^SET\s+TRANSACTION\s+ISOLATION\s+LEVEL\s+(SERIALIZABLE|REPEATABLE\s+READ|READ\s+COMMITTED|READ\s+UNCOMMITTED)(\s+READ\s+(ONLY|WRITE))?$/i',
+        '/^(COMMIT|END|ROLLBACK|ABORT)(\s+(WORK|TRANSACTION))?$/i',
+        '/^ROLLBACK(\s+(WORK|TRANSACTION))?\s+TO(\s+SAVEPOINT)?\s+[A-Za-z_]\w*$/i',
+        '/^(SAVEPOINT|RELEASE(\s+SAVEPOINT)?)\s+[A-Za-z_]\w*$/i',
+        '/^LOCK(\s+TABLE)?\s+[A-Za-z_]\w*(\s*,\s*[A-Za-z_]\w*)*(\s+IN\s+(ACCESS\s+SHARE|ROW\s+SHARE|ROW\s+EXCLUSIVE|SHARE\s+UPDATE\s+EXCLUSIVE|SHARE|SHARE\s+ROW\s+EXCLUSIVE|EXCLUSIVE|ACCESS\s+EXCLUSIVE)\s+MODE)?(\s+NOWAIT)?$/i',
+    ];
+
+    /** Vrai pendant l'inspection d'un scénario qui autorise le contrôle de transaction. */
+    private bool $transactionsAllowed = false;
+
     private const DML_WORDS = ['INSERT', 'UPDATE', 'DELETE', 'MERGE', 'REPLACE', 'UPSERT', 'TRUNCATE'];
 
     private const DDL_WORDS = ['CREATE', 'ALTER', 'DROP', 'RENAME', 'COMMENT'];
@@ -91,6 +107,8 @@ class QueryGuard
 
         $kinds = [];
         $allWords = [];
+        // Remis à faux en fin d'inspection, et à chaque inspection de script (voir inspectScript()).
+        $this->transactionsAllowed = in_array(StatementKind::Transaction, $allowed, true);
 
         foreach ($statements as $statement) {
             $words = $this->lexer->words($statement);
@@ -111,6 +129,7 @@ class QueryGuard
             $kinds[] = $kind;
         }
 
+        $this->transactionsAllowed = false;
         $this->checkRequiredAndForbidden($allWords, $options);
 
         return new GuardedQuery($statements, $kinds);
@@ -124,6 +143,8 @@ class QueryGuard
      */
     public function inspectScript(string $sql): void
     {
+        $this->transactionsAllowed = false;
+
         foreach ($this->lexer->statements($sql) as $statement) {
             // Le script est chargé par le compte propriétaire : pas de code stocké qui s'exécuterait avec ses droits.
             if ($this->classify($this->lexer->words($statement), $statement) === StatementKind::Routine) {
@@ -138,6 +159,10 @@ class QueryGuard
     private function classify(array $words, string $statement): StatementKind
     {
         $first = $words[0];
+
+        if ($this->transactionsAllowed && $this->isTransactionControl($statement)) {
+            return StatementKind::Transaction;
+        }
 
         if (in_array($first, self::FORBIDDEN_STATEMENTS, true)) {
             throw new QueryRejected("L'instruction {$first} n'est pas autorisée dans le bac à sable.");
@@ -190,6 +215,20 @@ class QueryGuard
                 throw new QueryRejected("La création ou la modification d'objets {$word} n'est pas autorisée ici.");
             }
         }
+    }
+
+    private function isTransactionControl(string $statement): bool
+    {
+        // Pas de commentaire ni de chaîne : la forme doit être exactement l'une des formes permises.
+        $normalized = trim(preg_replace('/\s+/', ' ', $statement));
+
+        foreach (self::TRANSACTION_PATTERNS as $pattern) {
+            if (preg_match($pattern, $normalized)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

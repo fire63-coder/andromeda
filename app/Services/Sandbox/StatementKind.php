@@ -11,6 +11,7 @@ enum StatementKind: string
     case Dml = 'dml';
     case Ddl = 'ddl';
     case Routine = 'routine';
+    case Transaction = 'transaction';
 
     public function label(): string
     {
@@ -19,6 +20,7 @@ enum StatementKind: string
             self::Dml => 'modifications de données (INSERT, UPDATE, DELETE)',
             self::Ddl => 'modifications de structure (CREATE, ALTER, DROP)',
             self::Routine => 'fonctions et procédures stockées (CREATE FUNCTION, CREATE PROCEDURE, CALL)',
+            self::Transaction => 'instructions de transaction (BEGIN, COMMIT, ROLLBACK, SAVEPOINT, LOCK)',
         };
     }
 }

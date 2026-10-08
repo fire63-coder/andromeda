@@ -238,6 +238,9 @@
             {{-- Résultat --}}
             @if ($result)
                 <div class="overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10" data-testid="result">
+                    @if (! empty($result['timeline']))
+                        @include('livewire.partials.scenario-timeline', ['timeline' => $result['timeline']])
+                    @endif
                     @if (! $result['success'])
                         <div class="px-5 py-4">
                             <p class="text-sm font-semibold text-rose-600 dark:text-rose-400">
@@ -245,6 +248,8 @@
                             </p>
                             <pre class="mt-2 whitespace-pre-wrap font-mono text-sm text-gray-700 dark:text-gray-300">{{ $result['error'] }}</pre>
                         </div>
+                    @elseif (! empty($result['timeline']) && empty($result['columns']))
+                        {{-- Scénario sans requête de contrôle : la frise suffit. --}}
                     @elseif (empty($result['columns']))
                         <p class="px-5 py-4 text-sm text-gray-700 dark:text-gray-300">
                             Requête exécutée{{ $result['affected_rows'] !== null ? ' : '.$result['affected_rows'].' ligne(s) affectée(s)' : '' }}.

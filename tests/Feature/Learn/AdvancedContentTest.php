@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Content\LessonRenderer;
 use App\Services\Evaluation\SubmissionEvaluator;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\Scenario\ScenarioParser;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use PDO;
@@ -65,7 +66,7 @@ class AdvancedContentTest extends TestCase
         $renderer = app(LessonRenderer::class);
         $sandbox = app(SandboxManager::class);
 
-        foreach (Course::whereIn('slug', ['sql-avance', 'programmation-postgresql', 'optimisation-des-requetes'])->with('chapters.lessons.dataset', 'dialect')->get() as $course) {
+        foreach (Course::whereIn('slug', ['sql-avance', 'programmation-postgresql', 'optimisation-des-requetes', 'transactions-et-concurrence'])->with('chapters.lessons.dataset', 'dialect')->get() as $course) {
             $dialects = $course->dialect ? collect([$course->dialect]) : SqlDialect::query()->executable()->get();
 
             foreach ($course->chapters->flatMap->lessons as $lesson) {
@@ -75,7 +76,9 @@ class AdvancedContentTest extends TestCase
                             continue;
                         }
 
-                        $result = $sandbox->run($lesson->dataset, $dialect, $sql, LessonRenderer::SNIPPET_GUARD);
+                        $result = ScenarioParser::isScenario($sql)
+                            ? $sandbox->runScenario($lesson->dataset, $dialect, $sql)
+                            : $sandbox->run($lesson->dataset, $dialect, $sql, LessonRenderer::SNIPPET_GUARD);
                         $this->assertTrue($result->success, "{$lesson->slug} #{$index} ({$dialect->slug}) : {$result->error}");
                     }
                 }
@@ -211,5 +214,63 @@ class AdvancedContentTest extends TestCase
         $after = $sandbox->run($dataset, $pgsql, "SELECT COUNT(*) FROM pg_indexes WHERE indexname = 'ix_tmp'");
         $this->assertSame([[0]], $after->rows);
         $this->assertStringContainsString('prime', (string) $sandbox->run($dataset, $pgsql, 'SELECT prime FROM employees')->error);
+    }
+
+    #[Test]
+    public function concurrency_scenarios_run_on_real_sessions(): void
+    {
+        $pgsql = $this->requirePostgres();
+        $sandbox = app(SandboxManager::class);
+        $shop = Dataset::where('slug', 'boutique')->firstOrFail();
+        $stock = ['stock' => 'SELECT stock FROM products WHERE id = 1'];
+
+        // B attend le verrou de A, puis lit la valeur validée par A.
+        $locked = $sandbox->runScenario($shop, $pgsql, "-- A\nBEGIN;\nSELECT stock FROM products WHERE id = 1 FOR UPDATE;\n-- B\nBEGIN;\nSELECT stock FROM products WHERE id = 1 FOR UPDATE;\n-- A\nUPDATE products SET stock = stock - 1 WHERE id = 1;\nCOMMIT;\n-- B\nUPDATE products SET stock = stock - 1 WHERE id = 1;\nCOMMIT;", [], null, $stock);
+        $this->assertTrue($locked->success, (string) $locked->error);
+        $this->assertTrue($locked->timeline[1]['waited']);
+        $this->assertSame(3, $locked->timeline[1]['completed_at_step']);
+        $this->assertSame([['39']], $locked->timeline[1]['rows']);
+        $this->assertSame([[38]], $locked->checks['stock']['rows']);
+
+        // Interblocage détecté par PostgreSQL.
+        $deadlock = $sandbox->runScenario($shop, $pgsql, "-- A\nBEGIN;\nUPDATE products SET stock = 1 WHERE id = 1;\n-- B\nBEGIN;\nUPDATE products SET stock = 2 WHERE id = 2;\n-- A\nUPDATE products SET stock = 1 WHERE id = 2;\n-- B\nUPDATE products SET stock = 2 WHERE id = 1;\n-- A\nCOMMIT;\n-- B\nCOMMIT;");
+        $this->assertContains('40P01', array_column($deadlock->timeline, 'sqlstate'));
+
+        // Les COMMIT des sessions ne touchent jamais le jeu de données ; aucune copie ne reste.
+        $this->assertSame([[40]], $sandbox->run($shop, $pgsql, 'SELECT stock FROM products WHERE id = 1')->rows);
+        $this->assertSame([[0]], $sandbox->run($shop, $pgsql, "SELECT COUNT(*) FROM pg_namespace WHERE nspname LIKE 't\\_sc\\_%'")->rows);
+
+        // SQLite : refusé avec une explication.
+        $this->assertStringContainsString('PostgreSQL', (string) $sandbox->runScenario($shop, SqlDialect::where('slug', 'sqlite')->first(), "-- A\nSELECT 1")->error);
+    }
+
+    #[Test]
+    public function concurrency_exercises_check_interleaving_steps_and_final_state(): void
+    {
+        $pgsql = $this->requirePostgres();
+        $lost = $this->exercise('mise-a-jour-perdue');
+
+        // Autre correction valable : verrouiller la ligne lue.
+        $forUpdate = str_replace(['SELECT stock FROM products WHERE id = 1;', 'SET stock = 39'], ['SELECT stock FROM products WHERE id = 1 FOR UPDATE;', 'SET stock = stock - 1'], $lost->starter_sql);
+        $this->assertSame(SubmissionStatus::Correct, $this->evaluator->evaluate($lost, $pgsql, $forUpdate)->status);
+
+        // Mise à jour relative : correct ; valeur finale codée en dur (38) : juste sur le jeu visible, faux sur le jeu caché.
+        $this->assertSame(SubmissionStatus::Correct, $this->evaluator->evaluate($lost, $pgsql, str_replace('SET stock = 39', 'SET stock = stock - 1', $lost->starter_sql))->status);
+        $hardcoded = $this->evaluator->evaluate($lost, $pgsql, preg_replace('/SET stock = 39(.*)SET stock = 39/s', 'SET stock = 39$1SET stock = 38', $lost->starter_sql));
+        $this->assertSame(SubmissionStatus::Wrong, $hardcoded->status);
+        $this->assertSame(50, $hardcoded->score);
+
+        // Réordonner les étapes pour éviter le problème est refusé.
+        $serial = "-- A\nBEGIN;\nUPDATE products SET stock = stock - 1 WHERE id = 1;\nCOMMIT;\n-- B\nBEGIN;\nUPDATE products SET stock = stock - 1 WHERE id = 1;\nCOMMIT;";
+        $rejected = $this->evaluator->evaluate($lost, $pgsql, $serial);
+        $this->assertSame(SubmissionStatus::Rejected, $rejected->status);
+        $this->assertStringContainsString('A → B → A → B', $rejected->message);
+
+        // Lecture non répétable : l'étape 3 diffère en READ COMMITTED.
+        $inventory = $this->exercise('inventaire-coherent');
+        $wrong = $this->evaluator->evaluate($inventory, $pgsql, $inventory->starter_sql);
+        $this->assertSame(SubmissionStatus::Wrong, $wrong->status);
+        $this->assertSame(3, $wrong->feedback['step']);
+        $this->assertSame(SubmissionStatus::Correct, $this->evaluator->evaluate($inventory, $pgsql, str_replace('BEGIN;', 'BEGIN ISOLATION LEVEL SERIALIZABLE;', $inventory->starter_sql))->status);
     }
 }

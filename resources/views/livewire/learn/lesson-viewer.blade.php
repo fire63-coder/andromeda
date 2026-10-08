@@ -54,6 +54,8 @@
                             <div class="border-t border-white/10 bg-white text-sm dark:bg-gray-900" data-testid="snippet-result-{{ $index }}">
                                 @if (! $result['success'])
                                     <p class="px-4 py-3 font-mono text-rose-600 dark:text-rose-400">{{ $result['error'] }}</p>
+                                @elseif (! empty($result['timeline']))
+                                    @include('livewire.partials.scenario-timeline', ['timeline' => $result['timeline']])
                                 @elseif (empty($result['columns']))
                                     <p class="px-4 py-3 text-gray-600 dark:text-gray-300">{{ $result['affected_rows'] ?? 0 }} ligne(s) affectée(s) — modification annulée.</p>
                                 @else

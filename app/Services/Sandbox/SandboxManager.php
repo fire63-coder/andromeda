@@ -9,8 +9,10 @@ use App\Models\DatasetBuild;
 use App\Models\SandboxSession;
 use App\Models\SqlDialect;
 use App\Services\Sandbox\Contracts\SandboxDriver;
+use App\Services\Sandbox\Drivers\PostgresDriver;
 use App\Services\Sandbox\Exceptions\QueryRejected;
 use App\Services\Sandbox\Exceptions\SandboxUnavailable;
+use App\Services\Sandbox\Scenario\ScenarioParser;
 use Illuminate\Support\Str;
 
 /**
@@ -70,6 +72,46 @@ class SandboxManager
         }
 
         return $this->execute($dataset, $dialect, $query, $timeoutMs, $checkQueries);
+    }
+
+    /**
+     * Scénario de concurrence : étapes « -- A » / « -- B » exécutées par des sessions distinctes
+     * (PostgreSQL uniquement), puis lecture de l'état final par les requêtes de contrôle.
+     *
+     * @param  array<string, mixed>  $guardOptions  required_keywords / forbidden_keywords
+     * @param  array<string, string>  $checkQueries
+     */
+    public function runScenario(Dataset $dataset, SqlDialect $dialect, string $script, array $guardOptions = [], ?int $timeoutMs = null, array $checkQueries = []): QueryResult
+    {
+        try {
+            $steps = app(ScenarioParser::class)->parse($script, $guardOptions);
+        } catch (QueryRejected $e) {
+            return QueryResult::failure($e->getMessage(), QueryResult::ERROR_REJECTED);
+        }
+
+        try {
+            $driver = $this->driver($dialect);
+            $build = $this->build($dataset, $dialect);
+        } catch (SandboxUnavailable $e) {
+            return QueryResult::failure($e->getMessage(), QueryResult::ERROR_INTERNAL);
+        }
+
+        if (! $this->supportsScenarios($dialect)) {
+            return QueryResult::failure('Les scénarios de concurrence (plusieurs sessions) ne sont disponibles que sur PostgreSQL.', QueryResult::ERROR_REJECTED);
+        }
+
+        $timeoutMs = min($timeoutMs ?? PHP_INT_MAX, (int) config('sandbox.max_execution_ms'));
+
+        return $driver->runScenario($build, $steps, $checkQueries, $timeoutMs);
+    }
+
+    public function supportsScenarios(SqlDialect $dialect): bool
+    {
+        try {
+            return $this->driver($dialect) instanceof PostgresDriver;
+        } catch (SandboxUnavailable) {
+            return false;
+        }
     }
 
     public function isExecutable(Dataset $dataset, SqlDialect $dialect): bool

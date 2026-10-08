@@ -73,3 +73,10 @@ Artisan::command('challenges:daily', function (DailyChallengeGenerator $generato
 })->purpose('Crée le défi du jour s\'il n\'existe pas encore');
 
 Schedule::command('challenges:daily')->dailyAt('00:01');
+
+Artisan::command('sandbox:purge-scenarios', function () {
+    $dropped = (new PostgresDriver(config('sandbox.drivers.pgsql')))->purgeScenarioSchemas();
+    $this->info("{$dropped} copie(s) de scénario orpheline(s) supprimée(s).");
+})->purpose('Supprime les copies jetables de scénarios de concurrence restées sur le serveur PostgreSQL');
+
+Schedule::command('sandbox:purge-scenarios')->everyTenMinutes();

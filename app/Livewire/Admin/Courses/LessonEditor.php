@@ -9,6 +9,7 @@ use App\Models\Lesson;
 use App\Models\SqlDialect;
 use App\Services\Content\LessonRenderer;
 use App\Services\Sandbox\SandboxManager;
+use App\Services\Sandbox\Scenario\ScenarioParser;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -107,7 +108,9 @@ class LessonEditor extends Component
                 return ['index' => $index, 'sql' => $sql, 'ok' => false, 'message' => 'Choisissez un jeu de données pour exécuter les exemples.'];
             }
 
-            $result = $sandbox->run($dataset, $dialect, $sql, LessonRenderer::SNIPPET_GUARD);
+            $result = ScenarioParser::isScenario($sql)
+                ? $sandbox->runScenario($dataset, $dialect, $sql)
+                : $sandbox->run($dataset, $dialect, $sql, LessonRenderer::SNIPPET_GUARD);
 
             return [
                 'index' => $index,
