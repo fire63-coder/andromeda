@@ -53,6 +53,7 @@
                    title="{{ Auth::user()->rank?->name }}">
                     ⭐ {{ number_format(Auth::user()->xp, 0, ',', ' ') }} XP
                 </a>
+                <livewire:notifications.notification-bell />
                 <!-- Teams Dropdown -->
                 @if (Laravel\Jetstream\Jetstream::hasTeamFeatures())
                     <div class="ms-3 relative">
@@ -190,6 +191,12 @@
             </x-responsive-nav-link>
             <x-responsive-nav-link href="{{ route('leaderboard') }}" :active="request()->routeIs('leaderboard')">
                 Classement
+            </x-responsive-nav-link>
+            <x-responsive-nav-link href="{{ route('notifications.index') }}" :active="request()->routeIs('notifications.*')">
+                Notifications
+                @if ($unread = Auth::user()->unreadNotifications()->count())
+                    <span class="ms-2 rounded-full bg-rose-600 px-2 py-0.5 text-xs font-semibold text-white">{{ $unread }}</span>
+                @endif
             </x-responsive-nav-link>
             @if ($adminHome)
                 <x-responsive-nav-link href="{{ route($adminHome) }}" :active="request()->routeIs('admin.*')">

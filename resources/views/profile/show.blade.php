@@ -34,7 +34,7 @@
 
                 <x-section-border />
 
-                <div class="mt-10 sm:mt-0">
+                <div class="mt-10 sm:mt-0" id="notifications">
                     <livewire:profile.notification-preferences />
                 </div>
             </div>

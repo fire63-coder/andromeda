@@ -40,7 +40,7 @@
                 @forelse ($attempts as $attempt)
                     <li class="flex justify-between gap-2">
                         <span class="text-gray-800 dark:text-gray-100">{{ $attempt->certification->title }}</span>
-                        <span class="text-gray-600 dark:text-gray-300">{{ $attempt->status->label() }}@if ($attempt->score !== null) · {{ $attempt->score }} %@endif</span>
+                        <span class="text-gray-600 dark:text-gray-300">{{ $attempt->status->label() }}@if ($attempt->score !== null) · {{ $attempt->score }} %@endif@if ($attempt->certification->exam_mode) · <span @class(['font-semibold text-rose-600 dark:text-rose-400' => $attempt->closed_reason === 'incidents']) title="Incidents de surveillance">🛡️ {{ $attempt->incidents_count }} incident(s){{ $attempt->closed_reason === 'incidents' ? ', close' : '' }}</span>@endif</span>
                     </li>
                 @empty
                     <li class="text-gray-500">Aucune tentative.</li>

@@ -8,10 +8,11 @@ use App\Models\Certification;
 use App\Models\CertificationAttempt;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Démarre (ou reprend) une tentative : sujet tiré au sort dans le pool, figé, chronométré.
+ * Démarre (ou reprend) une tentative : sujet tiré au sort dans le pool (difficulté équilibrée), figé, chronométré.
  */
 class StartCertificationAttempt
 {
@@ -40,11 +41,7 @@ class StartCertificationAttempt
 
             $this->ensureEligible($user, $certification);
 
-            $exerciseIds = $certification->exercisePool()
-                ->published()
-                ->inRandomOrder()
-                ->limit($certification->exercises_count)
-                ->pluck('exercises.id');
+            $exerciseIds = $this->draw($certification);
 
             if ($exerciseIds->count() < $certification->exercises_count) {
                 throw new CertificationException('Le sujet de cette certification n\'est pas encore prêt. Réessayez plus tard.');
@@ -58,6 +55,38 @@ class StartCertificationAttempt
                 'expires_at' => now()->addMinutes($certification->duration_minutes),
             ]);
         });
+    }
+
+    /**
+     * Tirage du sujet : au hasard, mais à difficulté comparable d'un candidat à l'autre.
+     * Chaque niveau de difficulté du pool reçoit une part des questions proportionnelle à sa taille
+     * (méthode du plus fort reste), les questions sont tirées dans chaque part puis mélangées.
+     *
+     * @return Collection<int, int>
+     */
+    public function draw(Certification $certification): Collection
+    {
+        $pool = $certification->exercisePool()->published()->pluck('exercises.difficulty', 'exercises.id');
+        $wanted = $certification->exercises_count;
+
+        if ($pool->count() <= $wanted) {
+            return $pool->keys()->shuffle()->values();
+        }
+
+        $groups = $pool->keys()->groupBy(fn (int $id) => (int) $pool[$id]);
+        $quotas = $groups->map(fn (Collection $ids) => $wanted * $ids->count() / $pool->count());
+        $taken = $quotas->map(fn (float $quota) => (int) floor($quota))->all();
+
+        // Questions restantes : aux niveaux dont la part a la plus forte partie décimale (ex æquo : au hasard).
+        $remainders = $quotas->sortByDesc(fn (float $quota) => ($quota - floor($quota)) + random_int(0, 999) / 1e6)->keys();
+
+        foreach ($remainders->take($wanted - array_sum($taken)) as $difficulty) {
+            $taken[$difficulty]++;
+        }
+
+        return $groups->flatMap(fn (Collection $ids, int $difficulty) => $ids->shuffle()->take($taken[$difficulty]))
+            ->shuffle()
+            ->values();
     }
 
     /**

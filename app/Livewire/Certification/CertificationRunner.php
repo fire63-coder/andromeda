@@ -2,7 +2,9 @@
 
 namespace App\Livewire\Certification;
 
+use App\Actions\Certifications\CertificationException;
 use App\Actions\Certifications\FinishCertificationAttempt;
+use App\Actions\Certifications\RecordExamIncident;
 use App\Enums\AttemptStatus;
 use App\Models\CertificationAttempt;
 use App\Models\Exercise;
@@ -35,6 +37,13 @@ class CertificationRunner extends Component
             $attempt = $finish->handle($attempt);
         }
 
+        // Mode examen : rouvrir ou recharger la page fait sortir du plein écran sans laisser de trace côté navigateur.
+        if ($attempt->isSecureExam()) {
+            $opened = collect($attempt->incidents ?? [])->contains('type', 'opened');
+            app(RecordExamIncident::class)->handle($attempt, $opened ? 'page_reload' : 'opened');
+            $attempt->refresh();
+        }
+
         $this->attempt = $attempt;
         $this->question = max(1, min($this->question, count($attempt->exercise_ids)));
     }
@@ -50,11 +59,44 @@ class CertificationRunner extends Component
         $this->question = max(1, min($question, count($this->attempt->exercise_ids)));
     }
 
+    /**
+     * Incident signalé par le navigateur en mode examen (sortie du plein écran, changement d'onglet, collage bloqué…).
+     *
+     * @return array{counted: bool, count: int, limit: ?int, closed: bool}
+     */
+    public function reportIncident(string $type, RecordExamIncident $record): array
+    {
+        try {
+            $outcome = $record->handle($this->attempt, $type);
+        } catch (CertificationException) {
+            return ['counted' => false, 'count' => $this->attempt->incidents_count, 'limit' => null, 'closed' => false];
+        }
+
+        $this->attempt->refresh(); // compteur de l'en-tête, ou correction si l'épreuve vient d'être close
+
+        if ($outcome['closed']) {
+            $this->announceEnd();
+        }
+
+        return $outcome;
+    }
+
     /** Bouton « Terminer » ou fin du chronomètre côté navigateur. */
     public function finish(FinishCertificationAttempt $finish): void
     {
         $this->attempt = $finish->handle($this->attempt);
         unset($this->answered);
+        $this->announceEnd();
+    }
+
+    /**
+     * Fin d'une épreuve surveillée : la bannière « application fermée » laisse place au résultat.
+     */
+    private function announceEnd(): void
+    {
+        if ($this->attempt->certification->exam_mode) {
+            $this->dispatch('banner-message', style: 'success', message: 'Épreuve terminée : le reste de l\'application est de nouveau accessible.');
+        }
     }
 
     /**
@@ -97,9 +139,13 @@ class CertificationRunner extends Component
 
     public function render()
     {
+        $inProgress = $this->attempt->status === AttemptStatus::InProgress;
+        $secure = $inProgress && $this->attempt->certification->exam_mode;
+
         return view('livewire.certification.runner', [
-            'inProgress' => $this->attempt->status === AttemptStatus::InProgress,
+            'inProgress' => $inProgress,
+            'secure' => $secure,
             'current' => $this->exercises[$this->question - 1] ?? null,
-        ]);
+        ])->layoutData(['exam' => $secure]);
     }
 }

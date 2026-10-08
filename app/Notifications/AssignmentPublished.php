@@ -20,7 +20,8 @@ class AssignmentPublished extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        // Toujours dans l'application ; par e-mail sauf si l'élève l'a désactivé dans son profil.
+        return ($notifiable->assignment_emails ?? true) ? ['database', 'mail'] : ['database'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -40,5 +41,19 @@ class AssignmentPublished extends Notification implements ShouldQueue
         return $message
             ->action('Voir le devoir', route('assignments.show', $assignment))
             ->line('Vous pouvez désactiver ces e-mails depuis votre profil, rubrique « Notifications ».');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'kind' => 'assignment',
+            'icon' => '📝',
+            'title' => "Nouveau devoir : {$this->assignment->title}",
+            'body' => $this->assignment->due_at ? 'À rendre avant le '.$this->assignment->due_at->isoFormat('D MMMM YYYY à HH:mm').'.' : 'Sans échéance.',
+            'url' => route('assignments.show', $this->assignment, absolute: false),
+        ];
     }
 }

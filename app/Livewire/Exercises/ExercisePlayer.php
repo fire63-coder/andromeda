@@ -298,8 +298,16 @@ class ExercisePlayer extends Component
 
     public function render()
     {
+        $choices = $this->isSqlExercise() ? collect() : $this->exercise->choices;
+
+        if ($this->mode === 'certification') {
+            // Ordre des réponses propre à chaque tentative (stable d'un affichage à l'autre) :
+            // deux candidats côte à côte ne voient pas « la réponse C » au même endroit.
+            $choices = $choices->sortBy(fn ($choice) => hash('xxh3', "{$this->contextId}:{$choice->id}"))->values();
+        }
+
         return view('livewire.exercises.exercise-player', [
-            'choices' => $this->isSqlExercise() ? collect() : $this->exercise->choices,
+            'choices' => $choices,
         ]);
     }
 
@@ -419,6 +427,14 @@ class ExercisePlayer extends Component
 
     private function throttle(): bool
     {
+        // Pendant une épreuve surveillée, la sandbox ne sert qu'à l'épreuve (pas d'onglet d'entraînement ouvert à côté).
+        if ($this->mode !== 'certification' && auth()->user()->activeSecureExam()) {
+            $this->result = QueryResult::failure('Une épreuve en mode examen est en cours : terminez-la avant de reprendre l\'entraînement.', QueryResult::ERROR_REJECTED)->toPreview();
+            $this->verdict = null;
+
+            return false;
+        }
+
         if ($message = $this->sandboxThrottled()) {
             $this->result = QueryResult::failure($message, QueryResult::ERROR_REJECTED)->toPreview();
             $this->verdict = null;

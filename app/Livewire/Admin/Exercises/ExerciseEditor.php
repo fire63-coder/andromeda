@@ -5,6 +5,7 @@ namespace App\Livewire\Admin\Exercises;
 use App\Enums\ContentStatus;
 use App\Enums\DatasetRole;
 use App\Enums\ExerciseType;
+use App\Enums\UserRole;
 use App\Enums\ValidationStrategy;
 use App\Models\Dataset;
 use App\Models\Exercise;
@@ -12,9 +13,13 @@ use App\Models\Lesson;
 use App\Models\Level;
 use App\Models\Skill;
 use App\Models\SqlDialect;
+use App\Models\User;
+use App\Notifications\ExerciseAwaitingReview;
+use App\Notifications\ExercisePublished;
 use App\Services\Authoring\SolutionTester;
 use App\Services\Content\LessonRenderer;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
@@ -286,6 +291,7 @@ class ExerciseEditor extends Component
 
         $publishing = $status === ContentStatus::Published->value && $this->exercise?->status !== ContentStatus::Published;
         $wasPublished = $this->exercise?->status === ContentStatus::Published;
+        $statusBefore = $this->exercise?->status;
         $choicesBefore = $this->exercise?->choices()->orderBy('position')->get(['body', 'is_correct', 'explanation'])->toArray() ?? [];
         $datasetsBefore = $this->datasetRoles();
         $changed = false;
@@ -351,8 +357,13 @@ class ExerciseEditor extends Component
             $this->exercise->update(['status' => ContentStatus::InReview, 'reviewer_id' => null, 'reviewed_at' => null]);
             $this->status = ContentStatus::InReview->value;
             $this->saved = 'Modifications enregistrées : l\'exercice repasse en relecture et n\'est plus proposé aux élèves jusqu\'à sa republication.';
+            $this->notifyReviewers();
 
             return true;
+        }
+
+        if ($this->exercise->status === ContentStatus::InReview && $statusBefore !== ContentStatus::InReview) {
+            $this->notifyReviewers();
         }
 
         if ($publishing) {
@@ -367,6 +378,15 @@ class ExerciseEditor extends Component
         }
 
         return true;
+    }
+
+    /**
+     * Prévient les administrateurs (sauf l'auteur de la demande) qu'un exercice attend leur relecture.
+     */
+    private function notifyReviewers(): void
+    {
+        $admins = User::query()->where('role', UserRole::Admin)->where('is_active', true)->whereKeyNot(auth()->id())->get();
+        Notification::send($admins, new ExerciseAwaitingReview($this->exercise, auth()->user()));
     }
 
     /**
@@ -401,6 +421,11 @@ class ExerciseEditor extends Component
             'reviewed_at' => now(),
         ]);
         $this->saved = 'Exercice publié.';
+
+        $author = $this->exercise->author;
+        if ($author && $author->id !== auth()->id()) {
+            $author->notify(new ExercisePublished($this->exercise));
+        }
 
         return true;
     }

@@ -66,6 +66,23 @@
                 @error($field) <p class="mt-1 text-sm text-rose-600">{{ $message }}</p> @enderror
             </div>
         @endforeach
+        <div class="sm:col-span-2 lg:col-span-4 rounded-lg bg-gray-50 p-4 dark:bg-gray-900/40">
+            <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-100">
+                <input type="checkbox" wire:model.live="examMode" class="rounded border-gray-300 text-indigo-600 dark:border-gray-600 dark:bg-gray-900">
+                Mode examen surveillé
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Plein écran exigé, copier-coller et menu contextuel bloqués, reste de l'application fermé pendant l'épreuve.
+                Les sorties (plein écran, onglet, autre application, page rechargée) sont journalisées. Ordre des réponses des QCM propre à chaque candidat.
+            </p>
+            @if ($examMode)
+                <div class="mt-3 max-w-xs">
+                    <label class="{{ $label }}" for="maxIncidents">Incidents tolérés (vide = jamais de clôture)</label>
+                    <input id="maxIncidents" type="number" min="0" wire:model="maxIncidents" class="{{ $input }}">
+                    @error('maxIncidents') <p class="mt-1 text-sm text-rose-600">{{ $message }}</p> @enderror
+                </div>
+            @endif
+        </div>
     </section>
 
     <section class="{{ $card }}">

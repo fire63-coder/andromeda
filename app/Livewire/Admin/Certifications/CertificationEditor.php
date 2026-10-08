@@ -44,6 +44,10 @@ class CertificationEditor extends Component
 
     public string $status = 'draft';
 
+    public bool $examMode = false;
+
+    public ?int $maxIncidents = 3;
+
     /** @var list<int> */
     public array $pool = [];
 
@@ -75,6 +79,8 @@ class CertificationEditor extends Component
             'cooldownHours' => $certification->cooldown_hours,
             'xpReward' => $certification->xp_reward,
             'status' => $certification->status->value,
+            'examMode' => $certification->exam_mode,
+            'maxIncidents' => $certification->max_incidents,
             'pool' => $certification->exercisePool()->pluck('exercises.id')->all(),
         ]);
     }
@@ -111,8 +117,10 @@ class CertificationEditor extends Component
             'cooldownHours' => ['required', 'integer', 'between:0,2160'],
             'xpReward' => ['required', 'integer', 'between:0,5000'],
             'status' => ['required', Rule::enum(ContentStatus::class)],
+            'examMode' => ['boolean'],
+            'maxIncidents' => ['nullable', 'integer', 'between:0,50'],
             'pool.*' => [Rule::exists('exercises', 'id')],
-        ], attributes: ['title' => 'titre', 'slug' => 'identifiant', 'exercisesCount' => 'nombre de questions']);
+        ], attributes: ['title' => 'titre', 'slug' => 'identifiant', 'exercisesCount' => 'nombre de questions', 'maxIncidents' => 'incidents tolérés']);
 
         $attributes = [
             'title' => $data['title'],
@@ -127,6 +135,8 @@ class CertificationEditor extends Component
             'cooldown_hours' => $data['cooldownHours'],
             'xp_reward' => $data['xpReward'],
             'status' => $data['status'],
+            'exam_mode' => $data['examMode'],
+            'max_incidents' => $data['examMode'] ? $data['maxIncidents'] : null,
         ];
 
         $created = ! $this->certification;

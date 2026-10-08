@@ -15,7 +15,8 @@ use Illuminate\Support\Facades\Notification;
  * E-mails des devoirs, chacun envoyé une seule fois :
  * - à la publication, à tous les élèves de l'organisation ;
  * - la veille de l'échéance, aux élèves qui n'ont pas terminé.
- * Seuls les comptes actifs qui n'ont pas désactivé ces e-mails sont concernés.
+ * Seuls les comptes actifs sont concernés ; l'e-mail est facultatif (profil), la notification
+ * dans l'application ne l'est pas.
  */
 class SendAssignmentNotifications
 {
@@ -79,7 +80,6 @@ class SendAssignmentNotifications
         return $assignment->organization->members()
             ->wherePivot('role', 'member')
             ->where('users.is_active', true)
-            ->where('users.assignment_emails', true)
             ->get();
     }
 }

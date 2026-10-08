@@ -11,6 +11,8 @@ use App\Models\Dataset;
 use App\Models\Exercise;
 use App\Models\Skill;
 use App\Models\User;
+use App\Notifications\ExerciseAwaitingReview;
+use App\Notifications\ExercisePublished;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
@@ -121,6 +123,11 @@ class ExerciseEditorTest extends TestCase
         $exercise = Exercise::where('slug', 'produits-les-plus-chers')->firstOrFail();
         $this->assertSame(ContentStatus::InReview, $exercise->status);
 
+        // Les administrateurs sont prévenus (une seule fois, pas à chaque enregistrement en relecture).
+        Livewire::test(ExerciseEditor::class, ['exercise' => $exercise])->call('save')->assertHasNoErrors();
+        $this->assertSame(1, $this->admin->notifications()->where('type', ExerciseAwaitingReview::class)->count());
+        $this->assertSame(0, $this->trainer->notifications()->count());
+
         Livewire::actingAs($this->admin)->test(ExerciseIndex::class)->assertSee('1 à relire');
 
         // Solution cassée : publication refusée.
@@ -141,6 +148,11 @@ class ExerciseEditorTest extends TestCase
         $this->assertSame(ContentStatus::Published, $exercise->status);
         $this->assertSame($this->admin->id, $exercise->reviewer_id);
         $this->assertNotNull($exercise->reviewed_at);
+
+        // L'auteur apprend la publication depuis son centre de notifications.
+        $notification = $this->trainer->notifications()->sole();
+        $this->assertSame(ExercisePublished::class, $notification->type);
+        $this->assertSame(route('admin.exercises.edit', $exercise, absolute: false), $notification->data['url']);
     }
 
     #[Test]

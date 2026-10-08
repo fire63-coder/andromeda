@@ -33,6 +33,7 @@ use App\Livewire\Learn\CourseCatalog;
 use App\Livewire\Learn\CourseShow;
 use App\Livewire\Learn\Dashboard;
 use App\Livewire\Learn\LessonViewer;
+use App\Livewire\Notifications\NotificationCenter;
 use App\Models\Course;
 use App\Models\Exercise;
 use App\Models\Level;
@@ -62,9 +63,11 @@ Route::middleware([
     'auth:sanctum',
     config('jetstream.auth_session'),
     'verified',
+    'exam.lock',
 ])->group(function () {
     Route::get('/dashboard', Dashboard::class)->name('dashboard');
     Route::get('/classement', Leaderboard::class)->name('leaderboard');
+    Route::get('/notifications', NotificationCenter::class)->name('notifications.index');
 
     Route::get('/cours', CourseCatalog::class)->name('courses.index');
     Route::get('/cours/{course:slug}', CourseShow::class)->name('courses.show');

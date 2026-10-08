@@ -21,7 +21,10 @@
         <x-banner />
 
         <div class="min-h-screen bg-gray-100 dark:bg-gray-900">
-            @livewire('navigation-menu')
+            {{-- Épreuve en mode examen : pas de navigation vers le reste de l'application. --}}
+            @unless ($exam ?? false)
+                @livewire('navigation-menu')
+            @endunless
 
             <!-- Page Heading -->
             @if (isset($header))

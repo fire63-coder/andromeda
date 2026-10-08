@@ -72,10 +72,12 @@ class AssignmentNotificationTest extends TestCase
         Livewire::actingAs($this->manager)->test(AssignmentEditor::class, ['organization' => $this->organization, 'assignment' => $assignment])
             ->set('published', true)
             ->call('save')
-            ->assertSet('saved', 'Devoir publié : 1 élève(s) prévenu(s) par e-mail.');
+            ->assertSet('saved', 'Devoir publié : 2 élève(s) prévenu(s).');
 
-        Notification::assertSentTo($this->student, AssignmentPublished::class);
-        Notification::assertNotSentTo([$this->manager, $this->optedOut, $this->disabled], AssignmentPublished::class);
+        // Notification dans l'application pour tous les élèves actifs ; l'e-mail seulement pour ceux qui l'acceptent.
+        Notification::assertSentTo($this->student, AssignmentPublished::class, fn ($n, array $channels) => $channels === ['database', 'mail']);
+        Notification::assertSentTo($this->optedOut, AssignmentPublished::class, fn ($n, array $channels) => $channels === ['database']);
+        Notification::assertNotSentTo([$this->manager, $this->disabled], AssignmentPublished::class);
 
         // Une modification ultérieure ne renvoie rien.
         Livewire::actingAs($this->manager)->test(AssignmentEditor::class, ['organization' => $this->organization, 'assignment' => $assignment->fresh()])
@@ -105,10 +107,11 @@ class AssignmentNotificationTest extends TestCase
             $assignment->exercises()->attach($this->exercise->id, ['position' => 0]);
         }
 
-        $this->artisan('assignments:remind')->expectsOutputToContain('1 rappel(s)')->assertSuccessful();
+        $this->artisan('assignments:remind')->expectsOutputToContain('2 rappel(s)')->assertSuccessful();
 
         Notification::assertSentTo($this->student, AssignmentDueSoon::class, fn (AssignmentDueSoon $n) => $n->assignment->is($soon) && $n->done === 0 && $n->total === 1);
-        Notification::assertNotSentTo([$finisher, $this->optedOut, $this->disabled, $this->manager], AssignmentDueSoon::class);
+        Notification::assertSentTo($this->optedOut, AssignmentDueSoon::class, fn ($n, array $channels) => $channels === ['database']);
+        Notification::assertNotSentTo([$finisher, $this->disabled, $this->manager], AssignmentDueSoon::class);
 
         // Une seule fois par devoir.
         $this->assertSame(0, app(SendAssignmentNotifications::class)->dueSoon());

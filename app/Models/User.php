@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\AttemptStatus;
 use App\Enums\UserRole;
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
@@ -138,6 +139,19 @@ class User extends Authenticatable
     public function xpTransactions(): HasMany
     {
         return $this->hasMany(XpTransaction::class);
+    }
+
+    /**
+     * Tentative de certification en mode examen en cours (le reste de l'application est alors fermé).
+     */
+    public function activeSecureExam(): ?CertificationAttempt
+    {
+        return $this->certificationAttempts()
+            ->where('status', AttemptStatus::InProgress)
+            ->where('expires_at', '>', now())
+            ->whereHas('certification', fn ($q) => $q->where('exam_mode', true))
+            ->latest('id')
+            ->first();
     }
 
     public function certificationAttempts(): HasMany

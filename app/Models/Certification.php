@@ -18,6 +18,7 @@ class Certification extends Model
     protected $fillable = [
         'level_id', 'sql_dialect_id', 'title', 'slug', 'description', 'passing_score',
         'duration_minutes', 'exercises_count', 'max_attempts', 'cooldown_hours', 'xp_reward', 'status',
+        'exam_mode', 'max_incidents',
     ];
 
     /**
@@ -27,6 +28,7 @@ class Certification extends Model
     {
         return [
             'status' => ContentStatus::class,
+            'exam_mode' => 'boolean',
         ];
     }
 

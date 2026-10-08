@@ -24,6 +24,7 @@
                             <div>🔁 {{ $certification->max_attempts ? $attempts->count().' / '.$certification->max_attempts.' tentatives' : 'tentatives illimitées' }}</div>
                             @if ($certification->dialect) <div>🗄 {{ $certification->dialect->name }}</div> @endif
                             <div>⭐ +{{ $certification->xp_reward }} XP</div>
+                            @if ($certification->exam_mode) <div class="font-semibold text-indigo-600 dark:text-indigo-400" title="Plein écran exigé, copier-coller bloqué, sorties enregistrées">🛡️ Mode examen</div> @endif
                         </dl>
                     </div>
 
@@ -37,7 +38,7 @@
                             <p class="max-w-56 text-sm text-gray-500 dark:text-gray-400">{{ $item['blocked'] }}</p>
                         @else
                             <button type="button" wire:click="start({{ $certification->id }})"
-                                    wire:confirm="Le chronomètre démarre immédiatement ({{ $certification->duration_minutes }} min). Commencer ?"
+                                    wire:confirm="Le chronomètre démarre immédiatement ({{ $certification->duration_minutes }} min).{{ $certification->exam_mode ? ' Mode examen : plein écran exigé, copier-coller bloqué, sorties enregistrées'.($certification->max_incidents !== null ? ' (épreuve close au-delà de '.$certification->max_incidents.' incident(s))' : '').'.' : '' }} Commencer ?"
                                     class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
                                 Commencer
                             </button>

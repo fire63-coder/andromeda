@@ -10,6 +10,7 @@ use App\Services\Sandbox\Drivers\MysqlDriver;
 use App\Services\Sandbox\Drivers\PostgresDriver;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schedule;
 
 Artisan::command('inspire', function () {
@@ -84,6 +85,13 @@ Schedule::command('sandbox:purge-scenarios')->everyTenMinutes();
 
 Artisan::command('assignments:remind', function (SendAssignmentNotifications $notifications) {
     $this->info($notifications->dueSoon().' rappel(s) de devoir envoyé(s).');
-})->purpose('Rappelle par e-mail les devoirs à rendre dans les prochaines 24 heures aux élèves qui ne les ont pas terminés');
+})->purpose('Rappelle (application et e-mail) les devoirs à rendre dans les prochaines 24 heures aux élèves qui ne les ont pas terminés');
 
 Schedule::command('assignments:remind')->hourly();
+
+Artisan::command('notifications:prune {--days=90 : Âge minimal des notifications lues à supprimer}', function () {
+    $deleted = DB::table('notifications')->whereNotNull('read_at')->where('read_at', '<', now()->subDays((int) $this->option('days')))->delete();
+    $this->info("{$deleted} notification(s) lue(s) supprimée(s).");
+})->purpose('Supprime les notifications lues depuis longtemps');
+
+Schedule::command('notifications:prune')->dailyAt('03:10');

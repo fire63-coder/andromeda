@@ -4,6 +4,7 @@ namespace App\Actions\Certifications;
 
 use App\Enums\AttemptStatus;
 use App\Models\CertificationAttempt;
+use App\Notifications\CertificationCompleted;
 use App\Services\Gamification\BadgeEvaluator;
 use App\Services\Gamification\XpService;
 use Illuminate\Support\Collection;
@@ -11,7 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Clôt une tentative (bouton « Terminer » ou fin du temps) : score = moyenne des scores
+ * Clôt une tentative (bouton « Terminer », fin du temps ou trop d'incidents en mode examen) : score = moyenne des scores
  * de la dernière réponse à chaque question (0 sans réponse), certificat si réussite.
  */
 class FinishCertificationAttempt
@@ -21,9 +22,12 @@ class FinishCertificationAttempt
         private readonly BadgeEvaluator $badges,
     ) {}
 
-    public function handle(CertificationAttempt $attempt): CertificationAttempt
+    /**
+     * @param  string  $reason  submitted (bouton « Terminer ») | incidents (mode examen) ; « timeout » est déduit de l'échéance.
+     */
+    public function handle(CertificationAttempt $attempt, string $reason = 'submitted'): CertificationAttempt
     {
-        $passed = DB::transaction(function () use ($attempt) {
+        $passed = DB::transaction(function () use ($attempt, $reason) {
             $attempt = $attempt->newQuery()->lockForUpdate()->findOrFail($attempt->id);
 
             if ($attempt->status !== AttemptStatus::InProgress) {
@@ -33,12 +37,14 @@ class FinishCertificationAttempt
             $certification = $attempt->certification;
             $score = (int) round($this->scores($attempt)->avg());
             $passed = $score >= $certification->passing_score;
+            $timedOut = $attempt->expires_at->isPast();
 
             $attempt->update([
                 'status' => $passed ? AttemptStatus::Passed : AttemptStatus::Failed,
                 'score' => $score,
                 // Fin du temps : on date la clôture à l'échéance, pas au moment où l'on s'en aperçoit.
-                'completed_at' => $attempt->expires_at->isPast() ? $attempt->expires_at : now(),
+                'completed_at' => $timedOut ? $attempt->expires_at : now(),
+                'closed_reason' => $timedOut ? 'timeout' : $reason,
                 'certificate_code' => $passed ? $this->certificateCode() : null,
                 'issued_at' => $passed ? now() : null,
             ]);
@@ -50,11 +56,18 @@ class FinishCertificationAttempt
             return $passed;
         });
 
+        if ($passed === null) {
+            return $attempt->refresh(); // déjà close
+        }
+
         if ($passed) {
             $this->badges->evaluate($attempt->user);
         }
 
-        return $attempt->refresh();
+        $attempt->refresh();
+        $attempt->user->notify(new CertificationCompleted($attempt));
+
+        return $attempt;
     }
 
     /**
