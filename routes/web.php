@@ -30,11 +30,27 @@ use App\Livewire\Learn\CourseCatalog;
 use App\Livewire\Learn\CourseShow;
 use App\Livewire\Learn\Dashboard;
 use App\Livewire\Learn\LessonViewer;
+use App\Models\Course;
+use App\Models\Exercise;
+use App\Models\Level;
+use App\Models\SqlDialect;
 use Illuminate\Support\Facades\Route;
 
+// Accueil public ; un utilisateur connecté arrive directement sur son tableau de bord.
 Route::get('/', function () {
-    return view('welcome');
-});
+    if (auth()->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return view('welcome', [
+        'stats' => [
+            'courses' => Course::published()->count(),
+            'exercises' => Exercise::published()->whereNotNull('lesson_id')->count(),
+            'engines' => SqlDialect::query()->executable()->orderBy('position')->pluck('name'),
+            'levels' => Level::orderBy('position')->get(['position', 'name', 'description', 'color']),
+        ],
+    ]);
+})->name('home');
 
 // Vérification publique d'un certificat (lien partageable).
 Route::get('/certificats/{code}', CertificateController::class)->name('certificates.show');
