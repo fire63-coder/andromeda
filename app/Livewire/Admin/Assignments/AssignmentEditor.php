@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin\Assignments;
 
+use App\Actions\Assignments\SendAssignmentNotifications;
 use App\Models\Assignment;
 use App\Models\Exercise;
 use App\Models\Organization;
@@ -115,13 +116,16 @@ class AssignmentEditor extends Component
 
         $this->assignment->exercises()->sync(collect($this->exerciseIds)->values()->mapWithKeys(fn (int $id, int $position) => [$id => ['position' => $position]])->all());
 
+        // Première publication : les élèves sont prévenus par e-mail (une seule fois).
+        $notified = $this->assignment->isPublished() ? app(SendAssignmentNotifications::class)->published($this->assignment) : 0;
+
         if ($created) {
             $this->redirectRoute('admin.assignments.edit', [$this->organization, $this->assignment], navigate: true);
 
             return;
         }
 
-        $this->saved = 'Devoir enregistré.';
+        $this->saved = $notified > 0 ? "Devoir publié : {$notified} élève(s) prévenu(s) par e-mail." : 'Devoir enregistré.';
     }
 
     public function delete(): void

@@ -11,6 +11,8 @@ class Assignment extends Model
 {
     protected $fillable = ['organization_id', 'created_by', 'title', 'instructions', 'due_at', 'published_at'];
 
+    /** notified_at / reminded_at : gérés par SendAssignmentNotifications, jamais remplis par formulaire. */
+
     /**
      * @return array<string, string>
      */
@@ -19,6 +21,8 @@ class Assignment extends Model
         return [
             'due_at' => 'datetime',
             'published_at' => 'datetime',
+            'notified_at' => 'datetime',
+            'reminded_at' => 'datetime',
         ];
     }
 

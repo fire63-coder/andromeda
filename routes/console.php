@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Assignments\SendAssignmentNotifications;
 use App\Actions\Certifications\FinishCertificationAttempt;
 use App\Enums\AttemptStatus;
 use App\Models\CertificationAttempt;
@@ -80,3 +81,9 @@ Artisan::command('sandbox:purge-scenarios', function () {
 })->purpose('Supprime les copies jetables de scénarios de concurrence restées sur le serveur PostgreSQL');
 
 Schedule::command('sandbox:purge-scenarios')->everyTenMinutes();
+
+Artisan::command('assignments:remind', function (SendAssignmentNotifications $notifications) {
+    $this->info($notifications->dueSoon().' rappel(s) de devoir envoyé(s).');
+})->purpose('Rappelle par e-mail les devoirs à rendre dans les prochaines 24 heures aux élèves qui ne les ont pas terminés');
+
+Schedule::command('assignments:remind')->hourly();

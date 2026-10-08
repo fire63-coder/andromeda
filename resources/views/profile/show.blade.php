@@ -31,6 +31,12 @@
 
             <div class="mt-10 sm:mt-0">
                 <livewire:profile.organizations-form />
+
+                <x-section-border />
+
+                <div class="mt-10 sm:mt-0">
+                    <livewire:profile.notification-preferences />
+                </div>
             </div>
 
             <x-section-border />

@@ -39,6 +39,7 @@ class User extends Authenticatable
         'longest_streak' => 0,
         'leaderboard_visible' => true,
         'is_active' => true,
+        'assignment_emails' => true,
     ];
 
     /**
@@ -52,6 +53,7 @@ class User extends Authenticatable
         'password',
         'preferred_dialect_id',
         'leaderboard_visible',
+        'assignment_emails',
     ];
 
     /**
@@ -89,6 +91,7 @@ class User extends Authenticatable
             'last_activity_on' => 'date',
             'leaderboard_visible' => 'boolean',
             'is_active' => 'boolean',
+            'assignment_emails' => 'boolean',
         ];
     }
 
