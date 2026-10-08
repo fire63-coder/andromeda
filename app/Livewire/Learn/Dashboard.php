@@ -9,6 +9,7 @@ use App\Models\Level;
 use App\Models\Rank;
 use App\Services\Gamification\BadgeEvaluator;
 use App\Services\Gamification\LeaderboardService;
+use App\Services\Learning\AssignmentProgress;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Title;
@@ -31,6 +32,17 @@ class Dashboard extends Component
             ->where('progressable_type', (new Exercise)->getMorphClass())
             ->where('status', ProgressStatus::Completed)
             ->pluck('progressable_id');
+    }
+
+    /**
+     * Devoirs non terminés des organisations de l'élève, les plus urgents d'abord.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function assignments(): Collection
+    {
+        return app(AssignmentProgress::class)->pendingFor(auth()->user());
     }
 
     /**

@@ -3,6 +3,8 @@
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ExerciseIndexController;
 use App\Http\Controllers\OrganizationProgressExportController;
+use App\Livewire\Admin\Assignments\AssignmentEditor;
+use App\Livewire\Admin\Assignments\AssignmentResults;
 use App\Livewire\Admin\Certifications\CertificationEditor;
 use App\Livewire\Admin\Certifications\CertificationIndex;
 use App\Livewire\Admin\Challenges\ChallengeEditor;
@@ -26,6 +28,7 @@ use App\Livewire\Certification\CertificationList;
 use App\Livewire\Certification\CertificationRunner;
 use App\Livewire\Exercises\ExercisePlayer;
 use App\Livewire\Gamification\Leaderboard;
+use App\Livewire\Learn\AssignmentShow;
 use App\Livewire\Learn\CourseCatalog;
 use App\Livewire\Learn\CourseShow;
 use App\Livewire\Learn\Dashboard;
@@ -74,6 +77,8 @@ Route::middleware([
     Route::get('/arene', ArenaIndex::class)->name('arena.index');
     Route::get('/arene/{challenge:slug}', ChallengeRunner::class)->name('arena.show');
 
+    Route::get('/devoirs/{assignment}', AssignmentShow::class)->name('assignments.show');
+
     Route::get('/certifications', CertificationList::class)->name('certifications.index');
     Route::get('/certifications/tentatives/{attempt}', CertificationRunner::class)->name('certifications.attempt');
 
@@ -111,5 +116,9 @@ Route::middleware([
         Route::get('/organisations/{organization:slug}/suivi', OrganizationProgress::class)->name('organizations.progress');
         Route::get('/organisations/{organization:slug}/suivi/export', OrganizationProgressExportController::class)->name('organizations.progress.export');
         Route::get('/organisations/{organization:slug}/suivi/{member}', MemberProgress::class)->name('organizations.member')->whereNumber('member');
+
+        Route::get('/organisations/{organization:slug}/devoirs/creer', AssignmentEditor::class)->name('assignments.create');
+        Route::get('/organisations/{organization:slug}/devoirs/{assignment}', AssignmentResults::class)->name('assignments.results')->whereNumber('assignment');
+        Route::get('/organisations/{organization:slug}/devoirs/{assignment}/modifier', AssignmentEditor::class)->name('assignments.edit')->whereNumber('assignment');
     });
 });

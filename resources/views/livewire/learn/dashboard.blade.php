@@ -43,6 +43,32 @@
     <div class="grid gap-6 lg:grid-cols-3">
         {{-- Progression par niveau + prochain exercice --}}
         <section class="space-y-4 lg:col-span-2">
+            @if ($this->assignments->isNotEmpty())
+                <div class="rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10" data-testid="dashboard-assignments">
+                    <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Devoirs à rendre</h2>
+                    <ul class="mt-3 divide-y divide-gray-100 dark:divide-gray-700/60">
+                        @foreach ($this->assignments as $row)
+                            <li>
+                                <a href="{{ route('assignments.show', $row['assignment']) }}" wire:navigate class="flex items-center justify-between gap-4 py-2.5 hover:opacity-80">
+                                    <div>
+                                        <p class="font-medium text-gray-900 dark:text-white">{{ $row['assignment']->title }}</p>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                                            {{ $row['assignment']->organization->name }}
+                                            @if ($row['assignment']->due_at)
+                                                · <span @class(['font-semibold text-rose-600 dark:text-rose-400' => $row['assignment']->isOverdue(), 'text-amber-600 dark:text-amber-400' => ! $row['assignment']->isOverdue() && $row['assignment']->due_at->lt(now()->addDays(2))])>
+                                                    {{ $row['assignment']->isOverdue() ? 'en retard depuis' : 'à rendre' }} {{ $row['assignment']->due_at->isoFormat('dddd D MMM, HH:mm') }}
+                                                </span>
+                                            @endif
+                                        </p>
+                                    </div>
+                                    <span class="shrink-0 tabular-nums text-sm text-gray-600 dark:text-gray-300">{{ $row['done'] }}/{{ $row['total'] }}</span>
+                                </a>
+                            </li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
             @if ($this->nextExercise)
                 <a href="{{ route('exercises.show', $this->nextExercise) }}" wire:navigate
                    class="flex items-center justify-between rounded-xl bg-white p-5 shadow-sm ring-1 ring-gray-900/5 transition hover:ring-indigo-500 dark:bg-gray-800 dark:ring-white/10">

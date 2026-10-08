@@ -104,6 +104,7 @@ class OrganizationShow extends Component
     {
         return view('livewire.admin.organizations.show', [
             'members' => $this->organization->members()->orderBy('name')->get(),
+            'assignments' => $this->organization->assignments()->withCount('exercises')->orderByRaw('due_at IS NULL')->orderByDesc('due_at')->get(),
         ]);
     }
 

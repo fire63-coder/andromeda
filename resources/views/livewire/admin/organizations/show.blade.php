@@ -30,6 +30,27 @@
         </div>
     </section>
 
+    <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10" data-testid="org-assignments">
+        <div class="flex items-center justify-between gap-3">
+            <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Devoirs ({{ $assignments->count() }})</h2>
+            <a href="{{ route('admin.assignments.create', $organization) }}" wire:navigate class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500">Nouveau devoir</a>
+        </div>
+        <ul class="mt-3 divide-y divide-gray-100 text-sm dark:divide-gray-700">
+            @forelse ($assignments as $assignment)
+                <li class="flex flex-wrap items-center justify-between gap-2 py-2" wire:key="assignment-{{ $assignment->id }}">
+                    <a href="{{ route('admin.assignments.results', [$organization, $assignment]) }}" wire:navigate class="font-medium text-indigo-600 hover:underline dark:text-indigo-400">{{ $assignment->title }}</a>
+                    <span class="text-xs text-gray-500">
+                        {{ $assignment->exercises_count }} exercice(s)
+                        · {{ $assignment->due_at ? 'échéance '.$assignment->due_at->isoFormat('D MMM YYYY, HH:mm') : 'sans échéance' }}
+                        @unless ($assignment->isPublished()) · <span class="text-amber-600 dark:text-amber-400">brouillon</span> @endunless
+                    </span>
+                </li>
+            @empty
+                <li class="py-4 text-gray-500">Aucun devoir pour l'instant.</li>
+            @endforelse
+        </ul>
+    </section>
+
     <section class="rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 dark:bg-gray-800 dark:ring-white/10">
         <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Membres ({{ $members->count() }})</h2>
         @error('members') <p class="mt-2 text-sm text-rose-600" role="alert">{{ $message }}</p> @enderror

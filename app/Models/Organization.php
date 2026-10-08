@@ -25,6 +25,11 @@ class Organization extends Model
         return $this->belongsToMany(User::class)->withPivot(['role', 'joined_at']);
     }
 
+    public function assignments(): HasMany
+    {
+        return $this->hasMany(Assignment::class);
+    }
+
     public function challenges(): HasMany
     {
         return $this->hasMany(Challenge::class);
