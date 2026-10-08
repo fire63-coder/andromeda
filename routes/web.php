@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\ExerciseIndexController;
+use App\Http\Controllers\OrganizationProgressExportController;
 use App\Livewire\Admin\Certifications\CertificationEditor;
 use App\Livewire\Admin\Certifications\CertificationIndex;
 use App\Livewire\Admin\Challenges\ChallengeEditor;
@@ -14,7 +15,9 @@ use App\Livewire\Admin\Datasets\DatasetIndex;
 use App\Livewire\Admin\Datasets\DatasetShow;
 use App\Livewire\Admin\Exercises\ExerciseEditor;
 use App\Livewire\Admin\Exercises\ExerciseIndex;
+use App\Livewire\Admin\Organizations\MemberProgress;
 use App\Livewire\Admin\Organizations\OrganizationIndex;
+use App\Livewire\Admin\Organizations\OrganizationProgress;
 use App\Livewire\Admin\Organizations\OrganizationShow;
 use App\Livewire\Admin\Users\UserIndex;
 use App\Livewire\Arena\ArenaIndex;
@@ -89,5 +92,8 @@ Route::middleware([
     Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/organisations', OrganizationIndex::class)->name('organizations.index');
         Route::get('/organisations/{organization:slug}', OrganizationShow::class)->name('organizations.show');
+        Route::get('/organisations/{organization:slug}/suivi', OrganizationProgress::class)->name('organizations.progress');
+        Route::get('/organisations/{organization:slug}/suivi/export', OrganizationProgressExportController::class)->name('organizations.progress.export');
+        Route::get('/organisations/{organization:slug}/suivi/{member}', MemberProgress::class)->name('organizations.member')->whereNumber('member');
     });
 });

@@ -1,7 +1,10 @@
 <div class="mx-auto max-w-5xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
     <div>
         <a href="{{ route('admin.organizations.index') }}" wire:navigate class="text-sm text-indigo-600 hover:underline dark:text-indigo-400">← Organisations</a>
-        <h1 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">{{ $organization->name }}</h1>
+        <div class="mt-1 flex flex-wrap items-center justify-between gap-3">
+            <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">{{ $organization->name }}</h1>
+            <a href="{{ route('admin.organizations.progress', $organization) }}" wire:navigate class="rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500">Suivi pédagogique →</a>
+        </div>
     </div>
 
     @if ($flash)
