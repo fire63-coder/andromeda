@@ -278,8 +278,12 @@ class ExerciseEditor extends Component
         ]);
 
         $publishing = $status === ContentStatus::Published->value && $this->exercise?->status !== ContentStatus::Published;
+        $wasPublished = $this->exercise?->status === ContentStatus::Published;
+        $choicesBefore = $this->exercise?->choices()->orderBy('position')->get(['body', 'is_correct', 'explanation'])->toArray() ?? [];
+        $datasetsBefore = $this->datasetRoles();
+        $changed = false;
 
-        DB::transaction(function () use ($data, $isMcq, $status) {
+        DB::transaction(function () use ($data, $isMcq, $status, &$changed) {
             $attributes = [
                 'title' => $data['title'],
                 'slug' => $data['slug'],
@@ -325,8 +329,24 @@ class ExerciseEditor extends Component
                 }
             }
             $this->exercise->datasets()->sync($datasets);
-            $this->exercise->skills()->sync($this->skillIds);
+            $skillChanges = $this->exercise->skills()->sync($this->skillIds);
+
+            $changed = $this->exercise->wasChanged() || $skillChanges['attached'] !== [] || $skillChanges['detached'] !== [];
         });
+
+        $changed = $changed
+            || $datasetsBefore !== $this->datasetRoles()
+            || $choicesBefore !== $this->exercise->choices()->orderBy('position')->get(['body', 'is_correct', 'explanation'])->toArray();
+
+        // Un formateur qui modifie un exercice publié le renvoie en relecture : il n'est plus proposé
+        // aux élèves tant qu'un administrateur ne l'a pas republié (après le test de la solution).
+        if ($wasPublished && $changed && auth()->user()->cannot('publish', Exercise::class)) {
+            $this->exercise->update(['status' => ContentStatus::InReview, 'reviewer_id' => null, 'reviewed_at' => null]);
+            $this->status = ContentStatus::InReview->value;
+            $this->saved = 'Modifications enregistrées : l\'exercice repasse en relecture et n\'est plus proposé aux élèves jusqu\'à sa republication.';
+
+            return true;
+        }
 
         if ($publishing) {
             return $this->publishIfTested();
@@ -340,6 +360,17 @@ class ExerciseEditor extends Component
         }
 
         return true;
+    }
+
+    /**
+     * Jeux de données liés et leur rôle (visible, test caché), dans l'ordre.
+     *
+     * @return array<int, string>
+     */
+    private function datasetRoles(): array
+    {
+        return $this->exercise?->datasets()->orderBy('dataset_exercise.position')->get()
+            ->mapWithKeys(fn ($dataset) => [$dataset->id => $dataset->pivot->role])->all() ?? [];
     }
 
     /**

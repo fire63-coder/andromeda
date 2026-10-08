@@ -189,4 +189,36 @@ class ExerciseEditorTest extends TestCase
             $this->assertEquals($before, $after, $slug);
         }
     }
+
+    #[Test]
+    public function a_trainer_editing_a_published_exercise_sends_it_back_to_review(): void
+    {
+        $this->draft()->set('status', 'in_review')->call('save');
+        $exercise = Exercise::where('slug', 'produits-les-plus-chers')->firstOrFail();
+        Livewire::actingAs($this->admin)->test(ExerciseEditor::class, ['exercise' => $exercise])->set('status', 'published')->call('save')->assertHasNoErrors();
+        $this->assertSame(ContentStatus::Published, $exercise->fresh()->status);
+
+        // Enregistrer sans rien changer : l'exercice reste publié.
+        Livewire::actingAs($this->trainer)->test(ExerciseEditor::class, ['exercise' => $exercise->fresh()])->call('save')->assertHasNoErrors();
+        $this->assertSame(ContentStatus::Published, $exercise->fresh()->status);
+
+        // Une vraie modification : retour en relecture, plus proposé aux élèves.
+        Livewire::actingAs($this->trainer)->test(ExerciseEditor::class, ['exercise' => $exercise->fresh()])
+            ->set('statement', 'Affichez les 3 produits les plus chers (nom, prix), du plus cher au moins cher.')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('status', 'in_review');
+
+        $exercise->refresh();
+        $this->assertSame(ContentStatus::InReview, $exercise->status);
+        $this->assertNull($exercise->reviewer_id);
+        $this->assertFalse(Exercise::practice()->whereKey($exercise->id)->exists());
+
+        // Un administrateur peut modifier un exercice publié sans le dépublier.
+        Livewire::actingAs($this->admin)->test(ExerciseEditor::class, ['exercise' => $exercise])->set('status', 'published')->call('save');
+        Livewire::actingAs($this->admin)->test(ExerciseEditor::class, ['exercise' => $exercise->fresh()])
+            ->set('xpReward', 35)
+            ->call('save');
+        $this->assertSame(ContentStatus::Published, $exercise->fresh()->status);
+    }
 }
