@@ -55,17 +55,38 @@ class PostgresDriver implements SandboxDriver
 
             $exists = $pdo->query('SELECT 1 FROM pg_namespace WHERE nspname = '.$pdo->quote($schema))->fetchColumn();
 
-            if (! $exists) {
-                $runner = $this->quoteIdentifier($this->config['runner_username']);
-                $quotedSchema = $this->quoteIdentifier($schema);
+            $quotedSchema = $this->quoteIdentifier($schema);
 
+            if (! $exists) {
                 $pdo->exec("CREATE SCHEMA {$quotedSchema}");
                 $pdo->exec("SET LOCAL search_path TO {$quotedSchema}");
                 $pdo->exec($build->validatedScript());
+            }
 
-                $pdo->exec("GRANT USAGE, CREATE ON SCHEMA {$quotedSchema} TO {$runner}");
-                $pdo->exec("GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA {$quotedSchema} TO {$runner}");
-                $pdo->exec("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {$quotedSchema} TO {$runner}");
+            // Compte d'exécution propre à ce build : il n'a de droits que sur ce schéma. Une requête
+            // exécutée sur un jeu de données ne peut donc pas lire les autres (jeux de test cachés).
+            ['username' => $role, 'password' => $password] = $this->executionCredentials($build);
+            $quotedRole = $this->quoteIdentifier($role);
+
+            if (! $pdo->query('SELECT 1 FROM pg_roles WHERE rolname = '.$pdo->quote($role))->fetchColumn()) {
+                $pdo->exec("CREATE ROLE {$quotedRole} LOGIN PASSWORD ".$pdo->quote($password)
+                    .' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT 50');
+                $pdo->exec("GRANT USAGE, CREATE ON SCHEMA {$quotedSchema} TO {$quotedRole}");
+                $pdo->exec("GRANT SELECT, INSERT, UPDATE, DELETE, REFERENCES, TRIGGER ON ALL TABLES IN SCHEMA {$quotedSchema} TO {$quotedRole}");
+                $pdo->exec("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {$quotedSchema} TO {$quotedRole}");
+
+                // Schéma créé avant ce mécanisme : le compte d'exécution partagé perd ses droits.
+                $runner = $this->quoteIdentifier($this->config['runner_username']);
+                $pdo->exec("REVOKE ALL ON SCHEMA {$quotedSchema} FROM {$runner}");
+                $pdo->exec("REVOKE ALL ON ALL TABLES IN SCHEMA {$quotedSchema} FROM {$runner}");
+                $pdo->exec("REVOKE ALL ON ALL SEQUENCES IN SCHEMA {$quotedSchema} FROM {$runner}");
+            }
+
+            // Sans GRANT OPTION, PostgreSQL n'accorde rien et se contente d'un avertissement : on vérifie.
+            $pdo->exec('GRANT CONNECT, TEMPORARY ON DATABASE '.$this->quoteIdentifier($this->config['database'])." TO {$quotedRole}");
+
+            if (! $pdo->query('SELECT has_database_privilege('.$pdo->quote($role).', current_database(), \'CONNECT\')')->fetchColumn()) {
+                throw new SandboxUnavailable('Le compte propriétaire ne peut pas ouvrir la base aux comptes d\'exécution : relancez « php artisan sandbox:setup-pgsql ».');
             }
 
             $pdo->commit();
@@ -89,7 +110,8 @@ class PostgresDriver implements SandboxDriver
         array $checkQueries = [],
     ): QueryResult {
         $schema = $this->prepare($build);
-        $pdo = $this->connect($this->config['runner_username'], $this->config['runner_password']);
+        ['username' => $role, 'password' => $password] = $this->executionCredentials($build);
+        $pdo = $this->connect($role, $password);
         $started = hrtime(true);
         $elapsed = fn () => (int) ((hrtime(true) - $started) / 1_000_000);
 
@@ -227,8 +249,10 @@ class PostgresDriver implements SandboxDriver
     public function runScenario(DatasetBuild $build, array $steps, array $checkQueries, int $timeoutMs): QueryResult
     {
         $schema = $this->prepare($build);
+        ['username' => $role, 'password' => $password] = $this->executionCredentials($build);
+        $config = [...$this->config, 'runner_username' => $role, 'runner_password' => $password];
 
-        return (new PostgresScenarioRunner($this->config, fn (string $user, string $password) => $this->connect($user, $password)))
+        return (new PostgresScenarioRunner($config, fn (string $user, string $password) => $this->connect($user, $password)))
             ->run($schema, $steps, $checkQueries, $timeoutMs);
     }
 
@@ -313,7 +337,35 @@ class PostgresDriver implements SandboxDriver
         $pdo = $this->connect($this->config['owner_username'], $this->config['owner_password']);
         $schema = $this->schemaName($build);
         $pdo->exec('DROP SCHEMA IF EXISTS '.$this->quoteIdentifier($schema).' CASCADE');
+        $this->dropExecutionRole($pdo, $this->executionCredentials($build)['username']);
         unset($this->prepared[$schema]);
+    }
+
+    /**
+     * Compte d'exécution du build : un rôle de connexion par schéma, dont le mot de passe est dérivé
+     * de la clé de l'application (rien à stocker, impossible à deviner sans elle).
+     *
+     * @return array{username: string, password: string}
+     */
+    public function executionCredentials(DatasetBuild $build): array
+    {
+        $role = $this->schemaName($build).'_r';
+
+        return ['username' => $role, 'password' => hash_hmac('sha256', 'sandbox-pgsql:'.$role, (string) config('app.key'))];
+    }
+
+    /**
+     * Supprime un compte d'exécution de build (ses droits sur la base d'abord).
+     */
+    public function dropExecutionRole(PDO $owner, string $role): void
+    {
+        if (! $owner->query('SELECT 1 FROM pg_roles WHERE rolname = '.$owner->quote($role))->fetchColumn()) {
+            return;
+        }
+
+        $quoted = $this->quoteIdentifier($role);
+        $owner->exec('REVOKE ALL ON DATABASE '.$this->quoteIdentifier($this->config['database'])." FROM {$quoted}");
+        $owner->exec("DROP ROLE {$quoted}");
     }
 
     /**
@@ -327,18 +379,37 @@ class PostgresDriver implements SandboxDriver
         $owner = $this->quoteIdentifier($this->config['owner_username']);
         $runner = $this->quoteIdentifier($this->config['runner_username']);
 
+        // Avant PostgreSQL 16, CREATEROLE permettait d'accorder n'importe quel rôle non superutilisateur
+        // (pg_read_server_files…) : trop risqué pour le compte qui charge les jeux de données.
+        if ((int) $pdo->query('SHOW server_version_num')->fetchColumn() < 160000) {
+            throw new \RuntimeException('La sandbox PostgreSQL nécessite PostgreSQL 16 ou plus récent (comptes d\'exécution par jeu de données).');
+        }
+
         $this->upsertRole($pdo, $this->config['owner_username'], $this->config['owner_password']);
         $this->upsertRole($pdo, $this->config['runner_username'], $this->config['runner_password']);
 
-        // Filets de sécurité côté serveur, indépendants des requêtes.
+        // Le propriétaire crée un compte d'exécution par build (PostgreSQL 16 : il ne gère que les rôles qu'il a créés).
+        $pdo->exec("ALTER ROLE {$owner} CREATEROLE");
+
+        // Filets de sécurité côté serveur, indépendants des requêtes : valeurs par défaut de la base,
+        // donc de chaque compte d'exécution (le propriétaire garde sa propre limite).
         $pdo->exec("ALTER ROLE {$owner} SET statement_timeout = '120s'");
-        $pdo->exec("ALTER ROLE {$runner} SET statement_timeout = '15s'");
-        $pdo->exec("ALTER ROLE {$runner} SET idle_in_transaction_session_timeout = '30s'");
-        $pdo->exec("ALTER ROLE {$runner} SET work_mem = '16MB'");
-        $pdo->exec("ALTER ROLE {$runner} SET temp_file_limit = '64MB'");
+        $pdo->exec("ALTER DATABASE {$database} SET statement_timeout = '15s'");
+        $pdo->exec("ALTER DATABASE {$database} SET idle_in_transaction_session_timeout = '30s'");
+        $pdo->exec("ALTER DATABASE {$database} SET work_mem = '16MB'");
+        $pdo->exec("ALTER DATABASE {$database} SET temp_file_limit = '64MB'");
+
+        // Le compte d'exécution partagé ne garde aucun droit sur les jeux de données existants.
+        foreach ($pdo->query('SELECT nspname FROM pg_namespace n JOIN pg_roles r ON r.oid = n.nspowner WHERE r.rolname = '.$pdo->quote($this->config['owner_username']))->fetchAll(PDO::FETCH_COLUMN) as $schema) {
+            $quotedSchema = $this->quoteIdentifier($schema);
+            $pdo->exec("REVOKE ALL ON SCHEMA {$quotedSchema} FROM {$runner}");
+            $pdo->exec("REVOKE ALL ON ALL TABLES IN SCHEMA {$quotedSchema} FROM {$runner}");
+            $pdo->exec("REVOKE ALL ON ALL SEQUENCES IN SCHEMA {$quotedSchema} FROM {$runner}");
+        }
 
         $pdo->exec("REVOKE ALL ON DATABASE {$database} FROM PUBLIC");
-        $pdo->exec("GRANT CONNECT, CREATE, TEMPORARY ON DATABASE {$database} TO {$owner}");
+        // WITH GRANT OPTION : le propriétaire ouvre la base aux comptes d'exécution qu'il crée.
+        $pdo->exec("GRANT CONNECT, CREATE, TEMPORARY ON DATABASE {$database} TO {$owner} WITH GRANT OPTION");
         $pdo->exec("GRANT CONNECT, TEMPORARY ON DATABASE {$database} TO {$runner}");
         $pdo->exec('REVOKE CREATE ON SCHEMA public FROM PUBLIC');
         // Empêche de lever statement_timeout via SELECT set_config(...), y compris en SQL dynamique.

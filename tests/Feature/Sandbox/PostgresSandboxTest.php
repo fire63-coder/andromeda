@@ -86,7 +86,12 @@ class PostgresSandboxTest extends TestCase
     public function the_runner_account_cannot_escape_the_sandbox(): void
     {
         $config = config('sandbox.drivers.pgsql');
-        $pdo = new PDO("pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']}", $config['runner_username'], $config['runner_password'], [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        // Le compte d'exécution du build, celui qui exécute réellement les requêtes des élèves.
+        $driver = $this->sandbox->driver($this->pgsql);
+        $build = $this->sandbox->build($this->dataset, $this->pgsql);
+        $driver->prepare($build);
+        ['username' => $user, 'password' => $password] = $driver->executionCredentials($build);
+        $pdo = new PDO("pgsql:host={$config['host']};port={$config['port']};dbname={$config['database']}", $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
         foreach (["SELECT set_config('statement_timeout', '0', false)", 'SELECT * FROM pg_shadow', "COPY (SELECT 1) TO '/tmp/out'", 'SELECT pg_terminate_backend(pg_backend_pid())', 'SELECT pg_cancel_backend(pg_backend_pid())', 'SET ROLE pg_signal_backend'] as $sql) {
             try {

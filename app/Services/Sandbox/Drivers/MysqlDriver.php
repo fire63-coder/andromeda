@@ -65,6 +65,15 @@ class MysqlDriver implements SandboxDriver
                 $this->createDatabase($owner, $database, $build);
             }
 
+            // Un rôle par base : le compte d'exécution n'a aucun droit direct, il active uniquement le
+            // rôle de la base visée. Une requête ne peut donc pas lire une autre base (jeux cachés).
+            $role = $this->roleAccount($owner, $database);
+            $runner = $this->literal($owner, $this->config['runner_username']).'@'.$this->literal($owner, '%');
+            $owner->query("CREATE ROLE IF NOT EXISTS {$role}");
+            // Le nom ne contient ni « _ » ni « % » (jokers de GRANT) : le droit porte sur cette seule base.
+            $owner->query('GRANT SELECT, INSERT, UPDATE, DELETE ON '.$this->quoteIdentifier($database).".* TO {$role}");
+            $owner->query("GRANT {$role} TO {$runner}");
+
             $this->prepared[$database] = true;
         } finally {
             $owner->query('SELECT RELEASE_LOCK('.$this->literal($owner, $database).')');
@@ -96,7 +105,17 @@ class MysqlDriver implements SandboxDriver
         }
 
         $database = $this->prepare($build);
-        $conn = $this->connect($this->config['runner_username'], $this->config['runner_password'], $database);
+        $conn = $this->connect($this->config['runner_username'], $this->config['runner_password']);
+
+        try {
+            // Seul le rôle de cette base est actif (y compris si activate_all_roles_on_login est activé).
+            $conn->query('SET ROLE '.$this->roleAccount($conn, $database));
+            $conn->select_db($database);
+        } catch (mysqli_sql_exception $e) {
+            $conn->close();
+
+            return QueryResult::failure("La base MySQL {$database} n'est pas accessible au compte d'exécution : relancez « php artisan sandbox:setup-mysql ».", QueryResult::ERROR_INTERNAL);
+        }
         $started = hrtime(true);
         $elapsed = fn () => (int) ((hrtime(true) - $started) / 1_000_000);
 
@@ -162,8 +181,22 @@ class MysqlDriver implements SandboxDriver
         $database = $this->databaseName($build);
         $owner = $this->connect($this->config['owner_username'], $this->config['owner_password']);
         $owner->query('DROP DATABASE IF EXISTS '.$this->quoteIdentifier($database));
+        $owner->query('DROP ROLE IF EXISTS '.$this->roleAccount($owner, $database));
         $owner->close();
         unset($this->prepared[$database]);
+    }
+
+    /**
+     * Nom du rôle d'une base de build (32 caractères au plus pour MySQL).
+     */
+    public static function roleName(string $prefix, string $database): string
+    {
+        return $prefix.'r_'.substr(md5($database), 0, 16);
+    }
+
+    private function roleAccount(mysqli $conn, string $database): string
+    {
+        return $this->literal($conn, self::roleName($this->config['database_prefix'], $database)).'@'.$this->literal($conn, '%');
     }
 
     /**
@@ -173,7 +206,7 @@ class MysqlDriver implements SandboxDriver
     public function installRoles(string $superuser, string $superuserPassword): void
     {
         $root = $this->connect($superuser, $superuserPassword);
-        $pattern = '`'.str_replace('_', '\\_', $this->config['database_prefix']).'%`.*';
+        $pattern = '`'.$this->namePrefix().'%`.*';
 
         foreach (['owner', 'runner'] as $account) {
             $user = $this->literal($root, $this->config["{$account}_username"]).'@'.$this->literal($root, '%');
@@ -185,10 +218,19 @@ class MysqlDriver implements SandboxDriver
         }
 
         $owner = $this->literal($root, $this->config['owner_username']).'@'.$this->literal($root, '%');
-        $runner = $this->literal($root, $this->config['runner_username']).'@'.$this->literal($root, '%');
 
-        $root->query("GRANT CREATE, DROP, ALTER, INDEX, REFERENCES, SELECT, INSERT, UPDATE, DELETE ON {$pattern} TO {$owner}");
-        $root->query("GRANT SELECT, INSERT, UPDATE, DELETE ON {$pattern} TO {$runner}");
+        // Le propriétaire crée un rôle par base et l'accorde au compte d'exécution, qui n'a aucun droit
+        // direct sur les bases de la sandbox. CREATE ROLE / DROP ROLE ne concernent que des comptes
+        // verrouillés (des rôles) ; ROLE_ADMIN permet d'accorder ces rôles.
+        $root->query("GRANT CREATE, DROP, ALTER, INDEX, REFERENCES, SELECT, INSERT, UPDATE, DELETE ON {$pattern} TO {$owner} WITH GRANT OPTION");
+        $root->query("GRANT CREATE ROLE, DROP ROLE ON *.* TO {$owner}");
+        $root->query("GRANT ROLE_ADMIN ON *.* TO {$owner}");
+
+        // Bases créées avant ce mécanisme (« sbx_ds1_b2_… ») : le compte d'exécution y avait accès directement.
+        $legacy = '^'.preg_quote($this->config['database_prefix'], '/').'ds[0-9]+_b[0-9]+_[0-9a-f]{10}$';
+        foreach ($root->query('SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME REGEXP '.$this->literal($root, $legacy))->fetch_all() as [$database]) {
+            $root->query('DROP DATABASE '.$this->quoteIdentifier($database));
+        }
         $root->close();
     }
 
@@ -303,7 +345,17 @@ class MysqlDriver implements SandboxDriver
     {
         $version = substr(md5($build->updated_at?->toIso8601String().$build->schema_sql), 0, 10);
 
-        return $this->config['database_prefix']."ds{$build->dataset_id}_b{$build->id}_{$version}";
+        // Sans « _ » : dans un GRANT, « _ » est un joker, et un nom échappé (« \_ ») empêche MySQL
+        // d'appliquer les droits hérités d'un rôle à USE base.
+        return $this->namePrefix()."ds{$build->dataset_id}b{$build->id}v{$version}";
+    }
+
+    /**
+     * Préfixe des bases de la sandbox, réduit aux lettres et chiffres (« sbx_ » → « sbx »).
+     */
+    private function namePrefix(): string
+    {
+        return preg_replace('/[^A-Za-z0-9]/', '', $this->config['database_prefix']);
     }
 
     private function connect(string $username, string $password, ?string $database = null): mysqli
